@@ -1,0 +1,6 @@
+{
+  "model": "kokoro",
+  "input": "The quick brown fox jumps over the lazy dog, while a jovial wizard conjures up perplexing glyphs and mystifying equations!",
+  "voice": "af_heart",
+  "response_format": "mp3"
+}

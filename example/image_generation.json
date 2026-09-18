@@ -1,0 +1,6 @@
+{
+  "prompt": "A majestic orange lion standing proudly on a sunlit savanna, golden fur glowing in the warm afternoon light, powerful build, calm and confident expression, natural environment with sparse grass and acacia trees in the background, soft diffused lighting, realistic wildlife photography style, 85mm lens, shallow depth of field, detailed fur texture, prominent title text 'Brave Leo' in bold white letters at the top center of the image, clean and uncluttered composition, no logos, no watermarks, no extra text, safe for work, non-sexual, fully clothed (in the sense of natural animal form), no artifacts, sharp focus on the lion, plain background, no people or animals other than the lion",
+  "model": "z-image-turbo",
+  "num_inference_steps": 8,
+  "size": "1024x1024"
+}

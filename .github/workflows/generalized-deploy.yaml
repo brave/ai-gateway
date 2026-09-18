@@ -1,0 +1,31 @@
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - prod
+      - test
+
+name: ai-gateway deployments
+permissions:
+  contents: read
+jobs:
+  push:
+    name: Invoke ai-gateway Docker Build Pipeline
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
+        with:
+          role-to-assume: ${{ secrets.GDBP_AWS_IAM_ROLE_ARN }}
+          aws-region: us-west-2
+      - name: Override GITHUB_REF and thus ECR destination for master
+        run: echo "GITHUB_REF_OVERRIDE=refs/heads/dev" >> "$GITHUB_ENV"
+        if: ${{ github.ref == 'refs/heads/main' }}
+      - name: ai-gateway deployments
+        uses: brave-intl/general-docker-build-pipeline-action@561b579abfb43a2cd0343e68cec85336b90c95d4 # v1.0.40

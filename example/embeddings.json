@@ -1,0 +1,4 @@
+{
+  "model": "text_embedding",
+  "input": ["hello how are you", "what is your name"]
+}

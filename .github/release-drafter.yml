@@ -1,0 +1,57 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+commitish: prod
+filter-by-commitish: true
+
+categories:
+  - title: "🚀 Features"
+    semver-increment: minor
+    when:
+      label: "enhancement"
+  - title: "🐛 Bug Fixes"
+    when:
+      label: "bug"
+  - title: "🔒 Security"
+    when:
+      label: "security"
+  - title: "📝 Documentation"
+    when:
+      label: "documentation"
+  - title: "🧰 Maintenance"
+    when:
+      labels:
+        - "chore"
+        - "dependencies"
+        - "task"
+  - type: "version-resolver"
+    semver-increment: "major"
+    when:
+      labels:
+        - "major"
+        - "breaking"
+  - type: "version-resolver"
+    semver-increment: "patch"
+
+# Infers labels from PR titles for PRs that weren't labeled by hand, matching
+# this repo's existing loose conventional-commit-style prefixes.
+autolabeler:
+  - label: "enhancement"
+    title:
+      - '/^feat(\(.+\))?:/i'
+  - label: "bug"
+    title:
+      - '/^fix(\(.+\))?:/i'
+  - label: "documentation"
+    title:
+      - '/^docs(\(.+\))?:/i'
+  - label: "dependencies"
+    title:
+      - '/^(chore|build)\(deps.*\):/i'
+  - label: "chore"
+    title:
+      - '/^(chore|task)(\(.+\))?:/i'
+
+template: |
+  ## Changes
+
+  $CHANGES

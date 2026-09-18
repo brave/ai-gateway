@@ -1,0 +1,35 @@
+# Generic ignores
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+.vscode
+
+
+# Project specific ignores
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+*.egg-info
+*.log
+
+# Jupyter notebook stuff
+**/*.ipynb~
+**/.ipynb_checkpoints
+
+build
+.coverage
+.coverage.*
+.venv
+
+# Env files are local-only; only the example template is tracked.
+.env*
+!.env.example

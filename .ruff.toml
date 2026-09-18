@@ -1,0 +1,14 @@
+# Ruff configuration for brave/ai-gateway.
+# Formatter remains black (see python-package.yml); this file only configures
+# ruff's lint checks. Extends the default rule set (E4/E7/E9/F) with bugbear.
+target-version = "py312"
+
+[lint]
+extend-select = ["B"]
+ignore = [
+    "B008",  # function calls in defaults (FastAPI Depends pattern)
+    "BLE001", # blind `except Exception` is the API-handler error pattern here
+    "ISC004", # implicit concatenation kept for readable long strings
+    "RUF012", # mutable class defaults in settings/pydantic models
+    "DTZ",    # naive datetimes are intentional (local-service timestamps)
+]

@@ -1,0 +1,104 @@
+version: "3.8"
+services:
+  ai-gateway:
+    image: ai-gateway-test
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /root/.cache
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test-builder
+    command: make test
+    tty: false
+    stdin_open: false
+    volumes:
+      - ./aichat:/app/aichat
+      - ./scripts:/app/scripts
+      - ./test:/app/test
+      - ./tools:/app/tools
+    ports:
+      - "8001:8000"
+    environment:
+      ENV: "local"
+      MODELS: >
+        {
+          "mixtral-8x7b-instruct": {
+              "backend": "vllm",
+              "upstream_model": "casperhansen/mixtral-instruct-awq",
+              "address": "http://localhost:8888/v1",
+              "friendly_name": "Mixtral 8x7B",
+              "maker": "Mistral AI",
+              "max_tokens": 2000,
+              "conversation_token_limit": 8000,
+              "conversation_token_limit_premium": 8000,
+              "free_min_api_version": 2,
+              "rate_limit":  30,
+              "rate_limit_interval_seconds": 10800,
+              "free": true,
+              "tool_support": false,
+              "image_support": false,
+              "audio_support": false,
+              "video_support": false,
+              "key": "chat-leo-expanded"
+          },
+          "llama-2-13b-chat": {
+              "address": "http://localhost:8080",
+              "friendly_name": "Llama 2 13B",
+              "maker": "Meta",
+              "upstream_model": "TheBloke/Llama-2-13B-chat-GPTQ",
+              "max_tokens": 2000,
+              "conversation_token_limit": 8000,
+              "conversation_token_limit_premium": 8000,
+              "rate_limit":  30,
+              "rate_limit_interval_seconds": 10800,
+              "free": true,
+              "tool_support": false,
+              "image_support": false,
+              "audio_support": false,
+              "video_support": false
+          }
+        }
+      MODEL_TRIAGING: >
+        {
+          "coding": {
+            "premium": "llama-2-13b-chat",
+            "non-premium": "llama-2-13b-chat"
+          },
+          "file": {
+            "premium": "llama-2-13b-chat",
+            "non-premium": "llama-2-13b-chat"
+          },
+          "vision": {
+            "premium": "llama-2-13b-chat",
+            "non-premium": "llama-2-13b-chat"
+          },
+          "language": {
+            "premium": "llama-2-13b-chat",
+            "non-premium": "llama-2-13b-chat"
+          },
+          "default": {
+            "premium": "llama-2-13b-chat",
+            "non-premium": "qwen-14b-instruct"
+          },
+          "long_context": {
+            "premium": "llama-2-13b-chat",
+            "non-premium": "llama-2-13b-chat"
+          },
+          "content_agent": {
+            "premium": "llama-2-13b-chat",
+            "non-premium": "llama-2-13b-chat"
+          },
+          "summary": {
+            "premium": "llama-2-13b-chat",
+            "non-premium": "llama-2-13b-chat"
+          }
+        }
+      RATE_LIMITING_ENABLED: "0"
+      TITLE_MODEL: "llama-2-13b-chat"
+      NEAR_API_KEY: "key"
+      DEEP_RESEARCH_URL: "http://host.docker.internal:8080"
+      DEEP_RESEARCH_ENABLED: "false"

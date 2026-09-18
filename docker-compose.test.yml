@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/compose-spec/compose-spec/master/schema/compose-spec.json
+name: ai-gateway-test
+
+services:
+  ai-gateway:
+    extends:
+      file: docker-compose.base.yml
+      service: ai-gateway
+    command: poetry run pytest -vv $TEST_ARG
+    environment:
+      - TEST_ARG=${TEST_ARG}
+    hostname: ai-gateway
+    networks:
+      - ai-gateway-test
+
+networks:
+  ai-gateway-test:
