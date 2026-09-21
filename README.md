@@ -93,8 +93,3 @@ In addition to the ai-gateway repo, our roadmap includes open sourcing some othe
 - [Conversation Sharing](docs/conversation-sharing.md) - the Leo conversation-sharing endpoints
 - [Rate Limiting](docs/rate-limiting.md) - rate limiting behavior and configuration
 
-## Attributions
-
-This repo contains code from the OpenAI compatibility server of [FastChat](https://github.com/lm-sys/FastChat) which is under an Apache 2.0 license.
-
-Subsequent Brave modifications and original contributions are under the MPL 2.0 license.
