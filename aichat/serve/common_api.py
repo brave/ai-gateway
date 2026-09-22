@@ -216,6 +216,12 @@ async def check_requests_common(
             has_valid_premium_credential=common["has_valid_premium_credential"],
         )
         if not rate_limit_verdict.allowed:
+            if rate_limit_verdict.limit_kind == "premium_model":
+                return create_error_response(
+                    ErrorCode.PREMIUM_MODEL_RATE_LIMIT,
+                    "You've reached the premium limit for this model. "
+                    "Select a different model or try again later.",
+                )
             return create_error_response(
                 ErrorCode.RATE_LIMIT,
                 f"Exceeded the rate limit for model {model}",
