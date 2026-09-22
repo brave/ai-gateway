@@ -80,6 +80,7 @@ def _request_httpx_client(
 class RateLimitVerdict:
     allowed: bool
     fallback_model: str | None = None
+    limit_kind: str | None = None
 
 
 async def check_rate_limit(
@@ -143,7 +144,7 @@ async def check_rate_limit(
         )
         return RateLimitVerdict(allowed=False)
     if not response.get("allowed", False):
-        return RateLimitVerdict(allowed=False)
+        return RateLimitVerdict(allowed=False, limit_kind=response.get("limit_kind"))
 
     return RateLimitVerdict(
         allowed=True, fallback_model=response.get("rate_limit_fallback_model")
