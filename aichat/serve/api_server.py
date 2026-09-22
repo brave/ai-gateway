@@ -60,6 +60,7 @@ from aichat.serve.services.backend import initialize_backends
 from aichat.serve.services.media_sandbox import shutdown_pool
 from aichat.serve.share_api import v1_router as share_router_v1
 from aichat.serve.stt_api import v1_router as stt_router_v1
+from aichat.serve.system_one_api import v1_router as system_one_router_v1
 from aichat.serve.tts_api import v1_router as tts_router_v1
 from aichat.serve.utils import get_malloc_trim, periodic_malloc_trim
 
@@ -197,6 +198,7 @@ app.include_router(image_generation_router_v1, prefix="/v1")
 app.include_router(tts_router_v1, prefix="/v1")
 app.include_router(embeddings_router_v1, prefix="/v1")
 app.include_router(stt_router_v1, prefix="/v1")
+app.include_router(system_one_router_v1, prefix="/v1")
 app.include_router(brave_search_router, prefix="/search-api")
 app.include_router(ohttp_router_v1, prefix="/v1")
 app.include_router(passthrough_router_v1, prefix="/v1")

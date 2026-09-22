@@ -222,6 +222,7 @@ def get_global_router() -> Router:
                 "embedding",
                 "classifier",
                 "speech_to_text",
+                "system_one",
             ]:
                 router_entry = _build_router_entry(model_id)
                 if router_entry:

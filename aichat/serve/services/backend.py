@@ -28,6 +28,7 @@ def initialize_backends() -> None:
             "embedding",
             "classifier",
             "speech_to_text",
+            "system_one",
         ]:
             continue
         try:
