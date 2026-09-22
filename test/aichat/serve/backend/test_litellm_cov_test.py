@@ -255,6 +255,12 @@ def test_get_global_router_builds_entries(monkeypatch):
             "upstream_model": "up-stt",
             "address": "http://x",
         },
+        "s1": {
+            "type": "system_one",
+            "backend": "triton",
+            "upstream_model": "system-one-triton",
+            "address": "http://x",
+        },
         "bad": {"type": "martian", "backend": "litellm"},
     }
     router_mock = MagicMock()
@@ -277,6 +283,7 @@ def test_get_global_router_builds_entries(monkeypatch):
         "emb",
         "cls",
         "stt",
+        "s1",
     ]
     assert kwargs["fallbacks"] == [{"m1": ["f1"]}]
     assert litellm_lib.in_memory_llm_clients_cache.max_size_in_memory == 100

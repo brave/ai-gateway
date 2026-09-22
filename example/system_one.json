@@ -1,0 +1,21 @@
+{
+  "model": "system_one_triton",
+  "state": {
+    "body": "I was charged twice. Please refund the duplicate payment."
+  },
+  "questions": {
+    "refund_requested": {
+      "type": "noul",
+      "instructions": "Does the user explicitly request a refund?"
+    },
+    "department": {
+      "type": "choice",
+      "instructions": "Which team should handle this?",
+      "criteria": {
+        "billing": "Payments and refunds",
+        "technical": "Bugs and integrations",
+        "other": "None of the above"
+      }
+    }
+  }
+}

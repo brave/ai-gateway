@@ -6,7 +6,7 @@ When `INTERNAL_MODELS_API_KEY` is set (typical Brave deploys), passthrough model
 -H "Authorization: Bearer $INTERNAL_MODELS_API_KEY"
 ```
 
-That applies to embeddings, TTS, STT (`/v1/audio/transcriptions`), and image generation. Chat completions use the separate service-key flow via `aichat-internal`. Leave the env var unset locally to skip this gate.
+That applies to embeddings, TTS, STT (`/v1/audio/transcriptions`), System One decisions (`/v1/systemone`), and image generation. Chat completions use the separate service-key flow via `aichat-internal`. Leave the env var unset locally to skip this gate.
 
 Fetch the list of available models:
 
@@ -36,6 +36,12 @@ Try the embeddings API:
 
 ```sh
 curl -X POST http://127.0.0.1:8000/v1/embeddings -H "Content-Type: application/json" -d "@example/embeddings.json"
+```
+
+Try the System One API (`state` + `questions`; requires a `system_one` entry in `MODELS` with Triton `address`, `endpoint`, and `method`):
+
+```sh
+curl -X POST http://127.0.0.1:8000/v1/systemone -H "Content-Type: application/json" -d "@example/system_one.json"
 ```
 
 ## Running the regression tests
