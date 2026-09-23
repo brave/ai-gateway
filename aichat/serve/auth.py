@@ -130,6 +130,31 @@ async def check_brave_services_key_v2(
     return bool(verdict.get("service_key_allowed", False))
 
 
+async def verify_service_key(raw_request: Request) -> bool:
+    """Wraps check_brave_services_key_v2 for callers invoked outside FastAPI's
+    dependency injection (e.g. api_key_chat_api, called directly from
+    middleware rather than as a routed endpoint), so its Depends(...) default
+    and HTTPException-on-unavailable don't need FastAPI's routing/exception
+    machinery to work correctly.
+
+    Reads the service-key signature from x-services-authorization rather than
+    Authorization, since on this path Authorization already carries the
+    caller's API key.
+    """
+    headers = raw_request.headers
+    verdict = await _request_auth_verdict(
+        raw_request,
+        authorization=headers.get("x-services-authorization"),
+        digest=headers.get("digest"),
+        x_forwarded_host=headers.get("x-forwarded-host"),
+        x_brave_key=headers.get("x-brave-key"),
+    )
+    try:
+        return await check_brave_services_key_v2(raw_request, verdict)
+    except fastapi.HTTPException:
+        return False
+
+
 def create_idempotency_key(
     messages: list[dict] | None,
     model: str | None,

@@ -8,6 +8,8 @@ from openai.types.chat import CompletionCreateParams
 from pydantic import TypeAdapter
 from starlette.requests import Request
 
+from aichat.serve.api_key_chat_settings import api_key_chat_settings
+from aichat.serve.auth import verify_service_key
 from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
 from aichat.serve.services.backend import get_backend
 
@@ -47,6 +49,11 @@ async def _stream_chunks(response: AsyncIterator) -> AsyncIterator[str]:
 @v1_router.post("/chat/completions", response_model=None)
 async def handle_chat_completions(request: Request):
     logger.debug("api_key_chat_api.py /chat/completions")
+
+    skv2_enabled = api_key_chat_settings.api_key_skv2_verification_enabled
+    if skv2_enabled and not await verify_service_key(request):
+        return openai_error_response(401, "Invalid services key", "invalid_api_key")
+
     try:
         body = await request.json()
         chat_request = _request_adapter.validate_python(body)

@@ -24,6 +24,8 @@ def test_is_valid_api_key():
 def mock_request():
     request = MagicMock(spec=Request)
     request.json = AsyncMock()
+    request.body = AsyncMock(return_value=b"{}")
+    request.headers = {}
     return request
 
 
