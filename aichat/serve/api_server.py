@@ -181,7 +181,9 @@ async def api_key_dispatch(request, call_next):
         server_settings.api_key_chat_enabled
         and request.url.path == "/v1/chat/completions"
     ):
-        api_key = request.headers.get("x-api-key")
+        api_key = api_key_chat_api.api_key_from_authorization(
+            request.headers.get("authorization")
+        )
         if api_key is not None:
             if not api_key_chat_api.is_valid_api_key(api_key):
                 return api_key_chat_api.openai_error_response(

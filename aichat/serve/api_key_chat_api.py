@@ -9,6 +9,7 @@ from pydantic import TypeAdapter
 from starlette.requests import Request
 
 from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
+from aichat.serve.common_api import extract_bearer_token
 from aichat.serve.services.backend import get_backend
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,13 @@ def openai_error_response(
 
 def is_valid_api_key(api_key: str) -> bool:
     return bool(_API_KEY_PATTERN.match(api_key))
+
+
+def api_key_from_authorization(authorization: str | None) -> str | None:
+    token = extract_bearer_token(authorization)
+    if token is None or not token.startswith(API_KEY_PREFIX):
+        return None
+    return token
 
 
 async def _stream_chunks(response: AsyncIterator) -> AsyncIterator[str]:

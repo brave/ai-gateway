@@ -10,7 +10,7 @@ def _request(path="/v1/chat/completions", api_key=None):
     req = MagicMock(spec=Request)
     req.url = MagicMock()
     req.url.path = path
-    req.headers = {"x-api-key": api_key} if api_key else {}
+    req.headers = {"authorization": f"Bearer {api_key}"} if api_key else {}
     req.state = MagicMock()
     return req
 
@@ -19,7 +19,7 @@ def _request(path="/v1/chat/completions", api_key=None):
 async def test_api_key_dispatch_invalid_key(monkeypatch):
     monkeypatch.setattr(api_server.server_settings, "api_key_chat_enabled", True)
     call_next = AsyncMock()
-    request = _request(api_key="invalid-key")
+    request = _request(api_key="brv_live_not-valid")
     response = await api_server.api_key_dispatch(request, call_next)
     assert response.status_code == 401
     call_next.assert_not_awaited()
