@@ -19,9 +19,7 @@ FROM base AS builder
 RUN poetry install --no-root --only main
 
 # Pre-download tiktoken BPE vocabulary files so images have no outbound
-# network dependency on first import.  Both encodings are needed:
-#   - o200k_base  (default tokenizer, used at module level in conversation/utils.py)
-#   - cl100k_base (used in serve/utils.py:count_tokens)
+# network dependency on first import (used for PDF token estimation).
 ENV TIKTOKEN_CACHE_DIR=/app/.tiktoken_cache
 RUN /app/.venv/bin/python -c "import tiktoken; tiktoken.get_encoding('o200k_base'); tiktoken.get_encoding('cl100k_base')"
 
@@ -32,7 +30,7 @@ RUN poetry install --no-root --with test
 
 COPY LICENSE README.md ./
 COPY test /app/test
-COPY aichat /app/aichat
+COPY aichat_media /app/aichat_media
 RUN poetry install --only-root
 
 # ── production runtime ───────────────────────────────────────────────────────
@@ -45,7 +43,7 @@ ENV VIRTUAL_ENV=/app/.venv \
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/.tiktoken_cache /app/.tiktoken_cache
 
-COPY aichat /app/aichat
+COPY aichat_media /app/aichat_media
 
 WORKDIR /app
 
@@ -56,4 +54,4 @@ RUN useradd -r -u 1001 -g root appuser \
     && chown -R appuser /app
 USER appuser
 
-CMD [ "python", "-m", "uvicorn", "aichat.serve.api_server:app" ]
+CMD [ "python", "-m", "uvicorn", "aichat_media.api_server:app" ]

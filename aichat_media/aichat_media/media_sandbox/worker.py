@@ -7,8 +7,8 @@ import sys
 import tempfile
 import traceback
 
-from aichat.serve.services.media_sandbox import landlock, limits, protocol
-from aichat.serve.services.media_sandbox.limits import IN_WORKER_WALL_CLOCK_SECONDS
+from aichat_media.media_sandbox import landlock, limits, protocol
+from aichat_media.media_sandbox.limits import IN_WORKER_WALL_CLOCK_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -142,17 +142,17 @@ def main() -> None:
         format="%(levelname)s %(name)s %(message)s",
     )
     os.environ.setdefault("TIKTOKEN_CACHE_DIR", "/tmp/data-gym-cache")
-    from aichat.serve.services.media_sandbox.ops_pdf import OP_HANDLERS as PDF_HANDLERS
-    from aichat.serve.services.media_sandbox.ops_pdf import preload as preload_pdf
-    from aichat.serve.services.media_sandbox.ops_stt import OP_HANDLERS as STT_HANDLERS
-    from aichat.serve.services.media_sandbox.ops_stt import preload as preload_stt
+    from aichat_media.media_sandbox.ops_pdf import OP_HANDLERS as PDF_HANDLERS
+    from aichat_media.media_sandbox.ops_pdf import preload as preload_pdf
+    from aichat_media.media_sandbox.ops_stt import OP_HANDLERS as STT_HANDLERS
+    from aichat_media.media_sandbox.ops_stt import preload as preload_stt
 
     preload_pdf()
     preload_stt()
     enable_probes = os.environ.get("MEDIA_SANDBOX_ENABLE_PROBES", "") == "1"
     handlers = {**PDF_HANDLERS, **STT_HANDLERS}
     if enable_probes:
-        from aichat.serve.services.media_sandbox.ops_probe import PROBE_HANDLERS
+        from aichat_media.media_sandbox.ops_probe import PROBE_HANDLERS
 
         handlers.update(PROBE_HANDLERS)
     try:
