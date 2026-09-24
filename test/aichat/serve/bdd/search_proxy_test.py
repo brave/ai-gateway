@@ -11,6 +11,7 @@
 
 import asyncio
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import httpx
@@ -176,7 +177,7 @@ async def _finish_failed():
 
 
 @when("the completed searches are popped")
-def pop_completed(ctx):
+def pop_completed(ctx, caplog):
     import contextlib
 
     async def _run():
@@ -199,7 +200,10 @@ def pop_completed(ctx):
             await pending
         return popped, remaining
 
-    ctx["popped"], ctx["remaining"] = asyncio.run(_run())
+    # The failed-task scenario title promises a logged warning: capture it.
+    with caplog.at_level(logging.WARNING, logger="aichat.serve.services.search"):
+        ctx["popped"], ctx["remaining"] = asyncio.run(_run())
+    ctx["records"] = [r.message for r in caplog.records]
 
 
 @then("the finished result is returned and the pending task remains")
@@ -212,3 +216,5 @@ def popped_finished_assert(ctx):
 def popped_failed_assert(ctx):
     assert ctx["popped"] == []
     assert ctx["remaining"] == 1
+    # The scenario title promises a warning was logged for the failed task.
+    assert any("Inline search task failed" in m for m in ctx["records"]), ctx["records"]
