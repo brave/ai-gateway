@@ -1,5 +1,4 @@
 import logging
-import re
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter
@@ -8,6 +7,7 @@ from openai.types.chat import CompletionCreateParams
 from pydantic import TypeAdapter
 from starlette.requests import Request
 
+from aichat.serve.api_key_chat_settings import api_key_chat_settings
 from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
 from aichat.serve.common_api import extract_bearer_token
 from aichat.serve.services.backend import get_backend
@@ -15,9 +15,6 @@ from aichat.serve.services.backend import get_backend
 logger = logging.getLogger(__name__)
 
 v1_router = APIRouter()
-
-API_KEY_PREFIX = "brv_live_"
-_API_KEY_PATTERN = re.compile(rf"^{re.escape(API_KEY_PREFIX)}[A-Za-z0-9]{{32,64}}$")
 
 _request_adapter = TypeAdapter(CompletionCreateParams)
 _PASSTHROUGH_EXCLUDE = {"model", "messages", "stream"}
@@ -33,12 +30,14 @@ def openai_error_response(
 
 
 def is_valid_api_key(api_key: str) -> bool:
-    return bool(_API_KEY_PATTERN.match(api_key))
+    return any(
+        api_key.startswith(prefix) for prefix in api_key_chat_settings.api_key_prefixes
+    )
 
 
 def api_key_from_authorization(authorization: str | None) -> str | None:
     token = extract_bearer_token(authorization)
-    if token is None or not token.startswith(API_KEY_PREFIX):
+    if token is None or not is_valid_api_key(token):
         return None
     return token
 

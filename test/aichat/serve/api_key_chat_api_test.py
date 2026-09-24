@@ -14,10 +14,10 @@ def test_openai_error_response_shape():
 
 
 def test_is_valid_api_key():
-    assert api_key_chat_api.is_valid_api_key("brv_live_" + "a" * 32)
-    assert not api_key_chat_api.is_valid_api_key("brv_live_" + "a" * 10)
+    assert api_key_chat_api.is_valid_api_key("test_key_" + "a" * 10)
+    assert api_key_chat_api.is_valid_api_key("test_key_not-valid")
     assert not api_key_chat_api.is_valid_api_key("other_" + "a" * 40)
-    assert not api_key_chat_api.is_valid_api_key("brv_live_" + "a" * 70)
+    assert not api_key_chat_api.is_valid_api_key("test_key")
 
 
 @pytest.fixture
