@@ -182,3 +182,10 @@ INTERNAL_REQUEST_RETRY_TOTAL = Counter(
     labelnames=("path", "outcome"),
     registry=REGISTRY,
 )
+
+MEDIA_REQUEST_RETRY_TOTAL = Counter(
+    name="media_request_retry_total",
+    documentation="Total number of aichat-media requests retried after a transient connection error, by path and outcome",
+    labelnames=("path", "outcome"),
+    registry=REGISTRY,
+)
