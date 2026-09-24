@@ -1,4 +1,4 @@
-from aichat_media.media_sandbox.pool import (
+from aichat.serve.services.media_sandbox.pool import (
     MediaSandboxPool,
     SandboxOpError,
     SandboxWorkerError,
