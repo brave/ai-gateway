@@ -5,7 +5,7 @@ import numpy as np
 
 from aichat.serve.backend.litellm import get_global_router
 from aichat.serve.external_service_settings import external_service_settings
-from aichat.serve.media_client import call_stt_decode
+from aichat.serve.services.media_sandbox import get_pool
 
 TARGET_SAMPLE_RATE = 16000
 
@@ -18,13 +18,14 @@ async def decode_wav_pcm_to_mono_16k_float32(
     to TARGET_SAMPLE_RATE). Returns (audio, duration_ms); duration_ms is
     pre-resample (original sample rate).
     """
-    result = await call_stt_decode(
+    result = await get_pool().call(
+        "stt_decode",
         {
             "audio_b64": base64.b64encode(audio_bytes).decode("ascii"),
             "max_duration_seconds": float(
                 external_service_settings.max_stt_audio_duration_seconds
             ),
-        }
+        },
     )
     pcm = base64.b64decode(result["pcm_b64"])
     audio = np.frombuffer(pcm, dtype=np.float32)

@@ -20,7 +20,7 @@ RUN poetry install --no-root --only main
 
 # Pre-download tiktoken BPE vocabulary files so images have no outbound
 # network dependency on first import.  Both encodings are needed:
-#   - o200k_base  (default tokenizer, used at module level in conversation/utils.py)
+#   - o200k_base  (default tokenizer, used at module level in conversation/utils.py and pdf.py)
 #   - cl100k_base (used in serve/utils.py:count_tokens)
 ENV TIKTOKEN_CACHE_DIR=/app/.tiktoken_cache
 RUN /app/.venv/bin/python -c "import tiktoken; tiktoken.get_encoding('o200k_base'); tiktoken.get_encoding('cl100k_base')"

@@ -5,12 +5,12 @@ import logging
 import sys
 from dataclasses import dataclass
 
-from aichat_media.media_sandbox import protocol
-from aichat_media.media_sandbox.limits import PARENT_HARD_KILL_SECONDS
+from aichat.serve.services.media_sandbox import protocol
+from aichat.serve.services.media_sandbox.limits import PARENT_HARD_KILL_SECONDS
 
 logger = logging.getLogger(__name__)
 
-WORKER_MODULE = "aichat_media.media_sandbox.worker"
+WORKER_MODULE = "aichat.serve.services.media_sandbox.worker"
 WALL_CLOCK_SECONDS = PARENT_HARD_KILL_SECONDS
 POOL_SIZE = 2
 SPAWN_TIMEOUT = 10.0

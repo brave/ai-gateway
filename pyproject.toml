@@ -38,6 +38,7 @@ numpy = "2.4.6"
 openai = "2.46.0"
 prometheus-fastapi-instrumentator = "8.0.2"
 pyahocorasick = "2.3.1"
+pypdf = "6.16.1"
 cryptography = ">=50.0.0"
 pydantic = "2.13.4"
 pydantic-settings = "2.14.2"
@@ -57,7 +58,6 @@ pylint = "4.0.8"
 [tool.poetry.group.test.dependencies]
 aioresponses = "0.7.9"
 coverage = "7.15.4"
-pypdf = "6.16.1"
 pytest = "9.1.1"
 pytest-asyncio = "1.4.0"
 pytest_httpx = "0.36.2"
@@ -67,4 +67,3 @@ time-machine = "3.2.0"
 
 [tool.pytest.ini_options]
 cache_dir = "/tmp/pytest_cache"
-testpaths = ["test"]

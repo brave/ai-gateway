@@ -6,13 +6,14 @@ import platform
 import wave
 
 import numpy as np
-from aichat_media.media_sandbox import (
+from pypdf import PdfWriter
+
+from aichat.serve.services.media_sandbox import (
     SandboxOpError,
     SandboxWorkerError,
     get_pool,
     reset_pool,
 )
-from pypdf import PdfWriter
 
 IS_LINUX = platform.system() == "Linux"
 
