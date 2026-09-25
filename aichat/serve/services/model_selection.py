@@ -30,6 +30,14 @@ from aichat.serve.services.models import get_model_config
 
 logger = logging.getLogger(__name__)
 
+AUTOMATIC_TRIAGE_MODELS = frozenset(
+    {"automatic", "automatic-bravebot", "automatic-brave-bot"}
+)
+
+
+def is_automatic_triage_model(model: str) -> bool:
+    return model in AUTOMATIC_TRIAGE_MODELS
+
 
 async def select_model_for_request(
     model: str,
@@ -50,7 +58,7 @@ async def select_model_for_request(
             else model_settings.content_agent_default_model
         )
 
-    if model != "automatic":
+    if not is_automatic_triage_model(model):
         if model not in model_settings.models:
             logger.error(f"Model {model} is not supported defaulting to automatic")
             model = "automatic"

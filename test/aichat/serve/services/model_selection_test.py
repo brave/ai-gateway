@@ -17,6 +17,7 @@ from aichat.serve.androcles import ANDROCLES_TRIAGE_INDICES
 from aichat.serve.services.androcles_prefetch import AndroclesPrefetch
 from aichat.serve.services.model_selection import (
     classify_task_with_androcles,
+    is_automatic_triage_model,
     is_long_context,
     select_model_for_request,
     triage_request,
@@ -216,6 +217,94 @@ class TestSelectModelForRequest:
                 is_premium=False,
             )
             assert result == "free-model"
+
+    @pytest.mark.parametrize(
+        "model",
+        ["automatic-bravebot", "automatic-brave-bot"],
+    )
+    @pytest.mark.asyncio
+    async def test_brave_bot_automatic_aliases_use_triage(
+        self, mock_messages, mock_model_settings, model
+    ):
+        mock_model_settings.models = {
+            model: {
+                "type": "ensemble",
+                "models": [{"model": "ensemble-target", "weight": 1}],
+            }
+        }
+        with (
+            patch(
+                "aichat.serve.services.model_selection.model_settings",
+                mock_model_settings,
+            ),
+            patch(
+                "aichat.serve.services.model_selection.triage_request",
+                new_callable=AsyncMock,
+            ) as mock_triage,
+            patch(
+                "aichat.serve.services.model_selection.check_and_increment_automatic_mode_daily_count",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+        ):
+            mock_triage.return_value = {
+                "premium": "premium-model",
+                "non-premium": "free-model",
+            }
+            result = await select_model_for_request(
+                model=model,
+                messages=mock_messages,
+                brave_capability=None,
+                is_premium=False,
+            )
+        assert result == "free-model"
+        mock_triage.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_automatic_free_default_still_resolves_ensemble(
+        self, mock_messages, mock_model_settings
+    ):
+        mock_model_settings.models = {
+            "automatic-free-default": {
+                "type": "ensemble",
+                "models": [{"model": "qwen-14b-instruct", "weight": 1}],
+            }
+        }
+        with (
+            patch(
+                "aichat.serve.services.model_selection.model_settings",
+                mock_model_settings,
+            ),
+            patch(
+                "aichat.serve.services.model_selection._resolve_weighted_model",
+                return_value="qwen-14b-instruct",
+            ) as mock_resolve,
+            patch(
+                "aichat.serve.services.model_selection.triage_request",
+                new_callable=AsyncMock,
+            ) as mock_triage,
+        ):
+            result = await select_model_for_request(
+                model="automatic-free-default",
+                messages=mock_messages,
+                brave_capability=None,
+                is_premium=False,
+            )
+        assert result == "qwen-14b-instruct"
+        mock_resolve.assert_called_once_with("automatic-free-default")
+        mock_triage.assert_not_awaited()
+
+
+class TestIsAutomaticTriageModel:
+    def test_recognizes_triage_aliases(self):
+        assert is_automatic_triage_model("automatic")
+        assert is_automatic_triage_model("automatic-bravebot")
+        assert is_automatic_triage_model("automatic-brave-bot")
+
+    def test_rejects_ensemble_outputs(self):
+        assert not is_automatic_triage_model("automatic-free-default")
+        assert not is_automatic_triage_model("automatic-premium-default")
+        assert not is_automatic_triage_model("claude-3-haiku")
 
 
 class TestTriageRequest:
