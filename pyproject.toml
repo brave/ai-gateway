@@ -26,7 +26,7 @@ dynamic = ["dependencies"]
 packages = [{ include = "aichat" }]
 
 [tool.poetry.dependencies]
-aiobotocore = "3.8.0"
+aiobotocore = "3.9.1"
 anthropic = "0.117.0"
 blake3 = "1.0.9"
 boto3 = "1.43.46"
