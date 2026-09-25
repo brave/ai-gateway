@@ -11,6 +11,7 @@
 # TODO: remove test/aichat/serve/services/media_sandbox_test.py#test_over_duration_rejected test/aichat/serve/services/media_sandbox_test.py:243
 
 import ast
+import asyncio
 import base64
 import io
 import json
@@ -51,6 +52,13 @@ scenarios(FEATURE)
 @pytest.fixture
 def ctx():
     return {}
+
+
+@pytest.fixture(autouse=True)
+def _pool_cleanup():
+    """Never leak a sandbox pool singleton into other tests."""
+    yield
+    reset_pool()
 
 
 # ---------- protocol ----------
@@ -512,18 +520,25 @@ def decode_outcome(ctx, outcome):
         assert res["n_samples"] == 16000
         assert float(np.abs(pcm).max()) <= 1.0
     elif outcome == "rejects compressed WAVE formats":
+        assert isinstance(err, ValueError)
         assert "compressed WAVE formats" in str(err)
     elif outcome == "rejects with the duration error":
+        assert isinstance(err, ValueError)
         assert "exceeds maximum" in str(err)
     elif outcome == "rejects with invalid WAV parameters":
+        assert isinstance(err, ValueError)
         assert "Invalid WAV parameters" in str(err)
     elif outcome == "rejects with corrupt WAV frame buffer":
+        assert isinstance(err, ValueError)
         assert "Corrupt WAV frame buffer" in str(err)
     elif outcome == "rejects with the sample width error":
+        assert isinstance(err, ValueError)
         assert "Unsupported WAV sample width" in str(err)
     elif outcome == "rejects with empty audio":
+        assert isinstance(err, ValueError)
         assert "Empty audio" in str(err)
     elif outcome == "rejects with the PCM WAV support message":
+        assert isinstance(err, ValueError)
         assert "Only PCM WAV is supported" in str(err)
     else:
         raise AssertionError(f"unknown decode outcome: {outcome}")
@@ -668,6 +683,14 @@ def apply_landlock_non_linux(ctx, monkeypatch):
     # process-wide landlock restriction to the pytest process itself.
     monkeypatch.setattr("platform.system", lambda: "Darwin")
     assert platform.system() == "Darwin"  # guard: landlock reads it at runtime
+
+    # Defense in depth: if the platform check is ever refactored away on a
+    # Linux runner, the landlock syscall entry point itself must fail loudly
+    # instead of restricting the pytest process.
+    def _forbidden_libc(*args, **kwargs):
+        raise AssertionError("landlock syscall must not run in tests")
+
+    monkeypatch.setattr(landlock.ctypes, "CDLL", _forbidden_libc)
     try:
         landlock.apply_landlock([], [])
         ctx["error"] = None
@@ -752,8 +775,6 @@ def call_raises_op_error(ctx):
 
 
 def _guarded_async(coro_fn, *args, **kwargs):
-    import asyncio
-
     try:
         return {"result": asyncio.run(coro_fn(*args, **kwargs)), "error": None}
     except Exception as e:
@@ -850,10 +871,13 @@ def pool_shutdown_and_reset(ctx):
     pool_mod._pool = pool
     ctx["killed_before"] = killed
     _guarded_async(pool.shutdown)
+    ctx["pool"] = pool
     reset_pool()
 
 
 @then("the pool is empty and the singleton is cleared")
 def pool_shutdown_assert(ctx):
     assert pool_mod._pool is None
+    # shutdown() must actually drain the worker list, not just kill workers.
+    assert ctx["pool"]._workers == []
     assert ctx["killed_before"] == [True]
