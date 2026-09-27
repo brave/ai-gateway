@@ -1,4 +1,5 @@
 from json import loads
+import re
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -39,6 +40,37 @@ async def options_rhfetch(request: Request):
     )
 
 
+# Only allow safe characters in path segments: alphanumeric, hyphen, underscore, dot (checked separately)
+_SAFE_SEGMENT_PATTERN = re.compile(r"^[a-zA-Z0-9_\-\.]+$")
+
+
+def validate_rhfetch_path(path: str) -> bool:
+    """
+    Validate that the path is safe to append to the upstream API URL.
+
+    Security considerations:
+    - Path traversal via '..' or '.' segments
+    - Control characters that could cause request smuggling
+    - Backslashes that some servers interpret as path separators
+    - Empty segments from '//' that could confuse path resolution
+
+    We use an allowlist approach: only permit known-safe characters.
+    """
+    if not path or path.startswith("/"):
+        return False
+
+    segments = path.split("/")
+    for segment in segments:
+        # Reject empty segments, dot, and double-dot
+        if segment in ("", ".", ".."):
+            return False
+        # Only allow safe characters (alphanumeric, hyphen, underscore, dot)
+        if not _SAFE_SEGMENT_PATTERN.match(segment):
+            return False
+
+    return True
+
+
 @router.get("/rhfetch/{path:path}")
 @rate_limit_route(
     config_key="rhfetch",
@@ -46,6 +78,9 @@ async def options_rhfetch(request: Request):
     error_message="Daily rate limit exceeded for rhfetch endpoint",
 )
 async def get_rhfetch(request: Request, path: str):
+    if not validate_rhfetch_path(path):
+        raise HTTPException(status_code=400, detail="Invalid path")
+
     url = f"{search_settings.brave_search_api_url}/res/v1/web/rich/fetch/{path}?{request.query_params}"
     try:
         httpx_client = request.state.httpx_client
