@@ -1,7 +1,12 @@
+import asyncio
 import logging
 
 from aichat.protocol.open_ai_protocol import Tool
-from aichat.serve.services.mcp.client import MCPClient, has_stdio_mcp_servers
+from aichat.serve.services.mcp.client import (
+    MCPClient,
+    has_enabled_mcp_servers,
+    has_stdio_mcp_servers,
+)
 from aichat.serve.services.mcp.executor import MCPToolExecutor
 from aichat.serve.services.mcp.handlers.deep_research import DeepResearchServerHandler
 from aichat.serve.services.mcp.handlers.default import DefaultMCPServerHandler
@@ -15,6 +20,7 @@ logger = logging.getLogger(__name__)
 _initialized = False
 
 _shared_mcp_client: MCPClient | None = None
+_shared_mcp_client_lock = asyncio.Lock()
 
 
 def _ensure_registry_initialized():
@@ -43,28 +49,46 @@ def set_shared_mcp_client(client: MCPClient | None) -> None:
     _shared_mcp_client = client
 
 
-def _client_for_request(registry) -> MCPClient:
-    return get_shared_mcp_client() or MCPClient(registry)
+async def get_or_create_shared_mcp_client() -> MCPClient:
+    """Return the process-wide MCP client (shared catalog cache and HTTP sessions)."""
+    existing = get_shared_mcp_client()
+    if existing is not None:
+        return existing
+
+    async with _shared_mcp_client_lock:
+        existing = get_shared_mcp_client()
+        if existing is not None:
+            return existing
+
+        _ensure_registry_initialized()
+        registry = get_global_registry()
+        client = MCPClient(registry)
+        set_shared_mcp_client(client)
+        return client
 
 
 async def warmup_shared_mcp_client() -> MCPClient | None:
-    """Start local stdio MCP subprocesses during app lifespan (skipped for HTTP-only configs)."""
-    if not mcp_settings.mcp_enabled or not has_stdio_mcp_servers():
+    """Warm MCP connections and tool catalog cache at app startup."""
+    if not mcp_settings.mcp_enabled or not has_enabled_mcp_servers():
         return None
-    logger.warning(
-        "stdio MCP servers configured: stdio spawns local subprocesses and is for "
-        "local development only — do not use in production. Use HTTP transport for "
-        "deployed MCP services.",
-    )
+    if has_stdio_mcp_servers():
+        logger.warning(
+            "stdio MCP servers configured: stdio spawns local subprocesses and is for "
+            "local development only — do not use in production. Use HTTP transport for "
+            "deployed MCP services.",
+        )
     _ensure_registry_initialized()
-    registry = get_global_registry()
     try:
-        client = MCPClient(registry)
-        await client.get_tools()
-        logger.info("Local stdio MCP subprocesses started")
+        client = await get_or_create_shared_mcp_client()
+        await client.get_cached_tool_catalog()
+        if has_stdio_mcp_servers():
+            logger.info("Local stdio MCP subprocesses started")
+        else:
+            logger.info("Shared HTTP MCP client warmed (tool catalog cached)")
         return client
     except Exception:
         logger.exception("MCP warmup failed (per-request fallback may still work)")
+        set_shared_mcp_client(None)
         return None
 
 
@@ -104,7 +128,7 @@ async def initialize_mcp_for_request(
     _ensure_registry_initialized()
 
     registry = get_global_registry()
-    mcp_client = _client_for_request(registry)
+    mcp_client = await get_or_create_shared_mcp_client()
     mcp_tools = await mcp_client.get_tools(
         model_config=model_config,
         matched_categories=matched_categories,
@@ -112,6 +136,7 @@ async def initialize_mcp_for_request(
     )
 
     executor = MCPToolExecutor(registry, mcp_client)
+    await executor.ensure_tool_catalog_loaded()
 
     logger.info(f"Initialized MCP with {len(mcp_tools)} tools")
     return mcp_tools, executor
@@ -178,8 +203,7 @@ async def get_tool_guidance() -> dict[str, str]:
     try:
         _ensure_registry_initialized()
 
-        registry = get_global_registry()
-        mcp_client = _client_for_request(registry)
+        mcp_client = await get_or_create_shared_mcp_client()
         _, guidance = await mcp_client.get_tools_with_guidance()
 
         return guidance

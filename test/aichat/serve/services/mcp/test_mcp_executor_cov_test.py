@@ -39,7 +39,12 @@ def _stdio_server():
 def _mock_client(server):
     client = MagicMock()
     client.servers = [server]
-    client.fetch_tools_from_server = AsyncMock(return_value=[_tool(server.name)])
+    tool = _tool(server.name)
+    client.fetch_tools_from_server = AsyncMock(return_value=[tool])
+    client.get_cached_tool_catalog = AsyncMock(return_value=[tool])
+    client.ensure_http_server_initialized = AsyncMock(return_value=True)
+    client.clear_http_server_init = Mock()
+    client._initialized_servers = {f"{server.name}:{server.url}": True}
     client._prepare_headers = Mock(return_value={})
     return client
 
@@ -63,7 +68,7 @@ def _http_cm(response):
 async def test_is_mcp_tool_exception_returns_false(caplog):
     """If tool fetching blows up, is_mcp_tool logs and returns False."""
     client = _mock_client(_http_server())
-    client.fetch_tools_from_server = AsyncMock(side_effect=RuntimeError("boom"))
+    client.get_cached_tool_catalog = AsyncMock(side_effect=RuntimeError("boom"))
     executor = MCPToolExecutor(registry=_registry(), mcp_client=client)
 
     assert await executor.is_mcp_tool("test_tool") is False

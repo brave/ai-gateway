@@ -64,20 +64,16 @@ class MCPToolExecutor:
             logger.error(f"Error checking if {tool_name} is MCP tool: {e}")
             return False
 
+    async def ensure_tool_catalog_loaded(self) -> None:
+        """Load the MCP tool catalog from the client's TTL cache."""
+        if self._tool_cache is not None:
+            return
+        client = await self._get_mcp_client()
+        self._tool_cache = await client.get_cached_tool_catalog()
+
     async def _fetch_all_tools(self, client: MCPClient) -> list[MCPTool]:
-        """Fetch all tools from all servers.
-
-        Args:
-            client: MCP client instance
-
-        Returns:
-            List of all available MCP tools
-        """
-        all_tools = []
-        for server in client.servers:
-            tools = await client.fetch_tools_from_server(server)
-            all_tools.extend(tools)
-        return all_tools
+        """Return the cached MCP tool catalog (shared with ``MCPClient.get_tools``)."""
+        return await client.get_cached_tool_catalog()
 
     async def execute_mcp_tool(
         self, tool_name: str, args: dict, model: str = "unknown"
@@ -155,6 +151,37 @@ class MCPToolExecutor:
                         return tool, server
 
         return None
+
+    async def _execute_tool_http_with_session(
+        self,
+        mcp_client: MCPClient,
+        server_config: MCPServerConfig,
+        tool_name: str,
+        arguments: dict,
+        model: str,
+    ) -> Any:
+        server_key = f"{server_config.name}:{server_config.url}"
+        for attempt in range(2):
+            if not mcp_client._initialized_servers.get(
+                server_key, False
+            ) and not await mcp_client.ensure_http_server_initialized(server_config):
+                raise RuntimeError(
+                    f"Failed to initialize MCP server {server_config.name}"
+                )
+            try:
+                return await self._execute_tool_http(
+                    mcp_client, server_config, tool_name, arguments, model
+                )
+            except httpx.HTTPStatusError as exc:
+                if attempt == 0 and exc.response.status_code in (401, 404):
+                    logger.warning(
+                        "MCP session may have expired for %s, re-initializing",
+                        server_config.name,
+                    )
+                    mcp_client.clear_http_server_init(server_config)
+                    continue
+                raise
+        raise RuntimeError(f"MCP tool call failed for {tool_name} after retry")
 
     async def _execute_tool_http(
         self,
@@ -250,7 +277,7 @@ class MCPToolExecutor:
                 tool_name, arguments
             )
         else:
-            result = await self._execute_tool_http(
+            result = await self._execute_tool_http_with_session(
                 mcp_client, server_config, tool_name, arguments, model
             )
         if isinstance(result, dict) and result.get("isError"):

@@ -7,10 +7,15 @@ import httpx
 import pytest
 import pytest_asyncio
 
+import aichat.serve.mcp_integration as mcp_integration_module
 from aichat.protocol.open_ai_protocol import Tool, ToolFunction
 from aichat.serve.mcp_integration import initialize_mcp_for_request, merge_tools
 from aichat.serve.services.mcp.executor import MCPToolExecutor
-from aichat.serve.services.mcp.registry import MCPServerHandler, MCPServerRegistry
+from aichat.serve.services.mcp.registry import (
+    MCPServerHandler,
+    MCPServerRegistry,
+    reset_global_registry,
+)
 from aichat.serve.tool_parser import ToolCall, ToolExecutor
 
 
@@ -39,9 +44,13 @@ class E2ETestHandler(MCPServerHandler):
 @pytest.fixture(autouse=True)
 def reset_state():
     """Reset all state before each test."""
-    MCPServerRegistry._instance = None
+    reset_global_registry()
+    mcp_integration_module._initialized = False
+    mcp_integration_module.set_shared_mcp_client(None)
     yield
-    MCPServerRegistry._instance = None
+    reset_global_registry()
+    mcp_integration_module._initialized = False
+    mcp_integration_module.set_shared_mcp_client(None)
 
 
 @pytest_asyncio.fixture

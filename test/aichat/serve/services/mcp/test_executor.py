@@ -15,6 +15,13 @@ from aichat.serve.services.mcp.registry import (
 from aichat.serve.services.mcp.types import MCPServerConfig
 
 
+async def _mark_http_server_initialized(
+    executor, server_config: MCPServerConfig
+) -> None:
+    client = await executor._get_mcp_client()
+    client._initialized_servers[f"{server_config.name}:{server_config.url}"] = True
+
+
 class TestServerHandler(MCPServerHandler):
     """Test handler for executor tests."""
 
@@ -447,6 +454,7 @@ async def test_execute_tool_on_server_sse_format(executor, httpx_client):
             }
         ]
         executor._mcp_client = None
+        await _mark_http_server_initialized(executor, server_config)
         result = await executor._execute_tool_on_server(
             server_config, "test_tool", {"arg": "value"}
         )
@@ -489,6 +497,7 @@ async def test_execute_tool_on_server_json_format(executor, httpx_client):
             }
         ]
         executor._mcp_client = None
+        await _mark_http_server_initialized(executor, server_config)
         result = await executor._execute_tool_on_server(
             server_config, "test_tool", {"arg": "value"}
         )
@@ -531,6 +540,7 @@ async def test_execute_tool_on_server_error_response(executor, httpx_client, cap
             }
         ]
         executor._mcp_client = None
+        await _mark_http_server_initialized(executor, server_config)
         with pytest.raises(Exception, match="MCP server error"):
             await executor._execute_tool_on_server(server_config, "test_tool", {})
 
@@ -564,6 +574,7 @@ async def test_execute_tool_on_server_network_error(executor, httpx_client):
             }
         ]
         executor._mcp_client = None
+        await _mark_http_server_initialized(executor, server_config)
         with pytest.raises(httpx.HTTPError):
             await executor._execute_tool_on_server(server_config, "test_tool", {})
 
@@ -821,6 +832,7 @@ async def test_execute_tool_on_server_sse_with_ping_messages(executor, httpx_cli
             }
         ]
         executor._mcp_client = None
+        await _mark_http_server_initialized(executor, server_config)
         result = await executor._execute_tool_on_server(
             server_config, "test_tool", {"arg": "value"}
         )
@@ -868,6 +880,7 @@ async def test_execute_tool_on_server_sse_ping_at_start(executor, httpx_client):
             }
         ]
         executor._mcp_client = None
+        await _mark_http_server_initialized(executor, server_config)
         result = await executor._execute_tool_on_server(server_config, "test_tool", {})
 
         assert result == {"content": [{"type": "text", "text": "Result"}]}
@@ -919,6 +932,7 @@ async def test_execute_tool_on_server_sse_multiple_pings(executor, httpx_client)
             }
         ]
         executor._mcp_client = None
+        await _mark_http_server_initialized(executor, server_config)
         result = await executor._execute_tool_on_server(server_config, "test_tool", {})
 
         assert result == {"content": [{"type": "text", "text": "Final result"}]}
@@ -965,6 +979,7 @@ async def test_execute_tool_on_server_sse_ping_with_whitespace(executor, httpx_c
             }
         ]
         executor._mcp_client = None
+        await _mark_http_server_initialized(executor, server_config)
         result = await executor._execute_tool_on_server(server_config, "test_tool", {})
 
         assert result == {"content": [{"type": "text", "text": "Result"}]}
