@@ -6,9 +6,13 @@ services:
     extends:
       file: docker-compose.base.yml
       service: ai-gateway
-    command: poetry run pytest -vv $TEST_ARG
+    # Coverage gate is opt-in via COVERAGE_FAIL_UNDER (CI passes 80).
+    command: sh -c 'poetry run coverage run -m pytest -vv $${TEST_ARG} && poetry run coverage report --fail-under "$${COVERAGE_FAIL_UNDER:-0}"'
     environment:
       - TEST_ARG=${TEST_ARG}
+      - COVERAGE_FAIL_UNDER=${COVERAGE_FAIL_UNDER:-}
+      # Container filesystem is read-only; coverage data must land on tmpfs.
+      - COVERAGE_FILE=/tmp/.coverage
     hostname: ai-gateway
     networks:
       - ai-gateway-test
