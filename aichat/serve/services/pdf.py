@@ -3,12 +3,12 @@ import logging
 
 from aichat.llm.llm_settings import llm_settings
 from aichat.serve.external_service_settings import external_service_settings
-from aichat.serve.metrics import PDF_FILE_PART_ENCOUNTERED
-from aichat.serve.services.media_sandbox import (
+from aichat.serve.media_client import (
     SandboxOpError,
     SandboxWorkerError,
-    get_pool,
+    call_pdf_analyze,
 )
+from aichat.serve.metrics import PDF_FILE_PART_ENCOUNTERED
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +51,13 @@ def _compute_max_extraction_tokens(conversation_token_limit: int | None) -> int:
 
 async def _analyze_pdf(pdf_bytes: bytes, max_extraction_tokens: int) -> dict:
     try:
-        return await get_pool().call(
-            "pdf_analyze",
+        return await call_pdf_analyze(
             {
                 "pdf_b64": base64.b64encode(pdf_bytes).decode("ascii"),
                 "encoding_name": llm_settings.default_tokenizer,
                 "max_extraction_tokens": max_extraction_tokens,
                 "max_allowed_pages": MAX_ALLOWED_PAGES,
-            },
+            }
         )
     except SandboxWorkerError as e:
         logger.error("Media sandbox worker failed hard: %s", e)

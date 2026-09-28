@@ -534,7 +534,7 @@ class TestIterEventsWithKeepalive:
 
         async def empty():
             return
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # makes this an async generator
 
         received = [
             item

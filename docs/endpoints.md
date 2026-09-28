@@ -44,6 +44,28 @@ Try the System One API (`state` + `questions`; requires a `system_one` entry in 
 curl -X POST http://127.0.0.1:8000/v1/systemone -H "Content-Type: application/json" -d "@example/system_one.json"
 ```
 
+## Passthrough
+
+`POST /v1/passthrough` forwards an OpenAI-compatible chat completion to the configured model backend and returns the raw response. Omit `stream` (or set it to `false`) for a JSON body; set `"stream": true` for server-sent events. Other chat-completion fields (`temperature`, `top_p`, `stop`, `tools`, and so on) are forwarded as given. `prompt_caching` is optional and must be a boolean.
+
+This endpoint is for local development. It is not exposed in production.
+
+```sh
+curl -X POST http://127.0.0.1:8000/v1/passthrough -H "Content-Type: application/json" -d '{"model":"qwen-14b-instruct","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+## API key chat completions
+
+`POST /v1/chat/completions` can also be called with an API key. That path is gated by `API_KEY_CHAT_ENABLED` (default `true`). When the flag is on, a request whose `Authorization: Bearer` token starts with a prefix from `API_KEY_PREFIXES` (default `["test_key_"]`) is forwarded to the configured model backend and returned as an OpenAI-compatible completion — JSON, or an SSE stream when `"stream": true`.
+
+Requests that do not present a matching key stay on the regular chat completions path. Set `API_KEY_CHAT_ENABLED=false` to disable the API-key path entirely.
+
+(Still in development, disabled in production)
+
+```sh
+curl -X POST http://127.0.0.1:8000/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer test_key_localdev" -d '{"model":"qwen-14b-instruct","messages":[{"role":"user","content":"Hello"}]}'
+```
+
 ## Running the regression tests
 
 Run the regression tests against all endpoints:
@@ -58,9 +80,7 @@ Use `--minimal` to test a representative subset of models (faster):
 cd example && python -u regression_test.py --minimal
 ```
 
-<details>
-
-<summary>Additional Regression Test Options</summary>
+Additional Regression Test Options
 
 | Flag                                   | Description                                        |
 | -------------------------------------- | -------------------------------------------------- |
@@ -69,8 +89,6 @@ cd example && python -u regression_test.py --minimal
 | `--protocol openai\|mcp\|conversation` | Run tests for a specific protocol only             |
 | `--url URL`                            | Server base URL (default: `http://localhost:8000`) |
 | `--timeout SECONDS`                    | Per-request timeout in seconds (default: 120)      |
-
-</details>
 
 ## Running with a local browser build
 

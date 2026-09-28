@@ -19,6 +19,13 @@ PDF_FILE_PART_ENCOUNTERED = Counter(
     registry=REGISTRY,
 )
 
+MEDIA_REQUEST_RETRY_TOTAL = Counter(
+    name="media_request_retry_total",
+    documentation="Total number of ai-gateway-media-processor requests retried after a ConnectError, by path and outcome",
+    labelnames=("path", "outcome"),
+    registry=REGISTRY,
+)
+
 
 def metrics(logger: Logger) -> Callable[[Info], None]:
     TOTAL = Counter(
