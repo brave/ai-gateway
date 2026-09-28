@@ -7,16 +7,22 @@ from openai.types.chat import CompletionCreateParams
 from pydantic import TypeAdapter
 from starlette.requests import Request
 
+from aichat.protocol.open_ai_protocol import MessageUnion
 from aichat.serve.api_key_chat_settings import api_key_chat_settings
 from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
 from aichat.serve.common_api import extract_bearer_token
+from aichat.serve.open_ai_api import detect_media_content, get_last_user_message_content
 from aichat.serve.services.backend import get_backend
+from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
+from aichat.serve.services.model_selection import select_model_for_request
+from aichat.serve.utils import get_real_ip
 
 logger = logging.getLogger(__name__)
 
 v1_router = APIRouter()
 
 _request_adapter = TypeAdapter(CompletionCreateParams)
+_message_adapter = TypeAdapter(MessageUnion)
 _PASSTHROUGH_EXCLUDE = {"model", "messages", "stream"}
 
 
@@ -78,6 +84,21 @@ async def handle_chat_completions(request: Request):
             if key not in _PASSTHROUGH_EXCLUDE and value is not None
         }
         tools = list(extra_params.pop("tools", None) or [])
+
+        protocol_messages = [
+            _message_adapter.validate_python(message) for message in messages
+        ]
+        dynamic_leo_prefetch = await run_dynamic_leo(protocol_messages)
+        model = await select_model_for_request(
+            model=model,
+            messages=protocol_messages,
+            is_premium=False,
+            last_user_message_content=get_last_user_message_content(protocol_messages),
+            media_type=detect_media_content(protocol_messages),
+            rate_key=get_real_ip(request.headers.get("x-forwarded-for")),
+            httpx_client=getattr(request.state, "httpx_client", None),
+            androcles_prefetch=dynamic_leo_prefetch,
+        )
 
         backend = get_backend(model)
 

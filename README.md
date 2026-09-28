@@ -87,7 +87,7 @@ In addition to the ai-gateway repo, our roadmap includes open sourcing some othe
 - [Configuring models](docs/configuring-models.md) - backends, model metadata, common local-setup gotchas
 - [Configuring MCP Servers](docs/mcp-servers.md) - MCP server config and custom handlers
 - [Premium model access](docs/premium-access.md) - how premium vs. free requests are distinguished and what it affects
-- [Trying other endpoints](docs/endpoints.md) - images, TTS, embeddings, regression tests, local browser builds
+- [Trying other endpoints](docs/endpoints.md) - images, TTS, embeddings, passthrough, API-key chat completions, regression tests, local browser builds
 - [Deep Research](docs/deep-research.md) - enabling the deep research MCP tool
 - [Bedrock](docs/bedrock.md) - using AWS Bedrock-backed models
 - [Conversation Sharing](docs/conversation-sharing.md) - the Leo conversation-sharing endpoints

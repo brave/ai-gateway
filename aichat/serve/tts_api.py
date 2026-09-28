@@ -24,6 +24,10 @@ CONTENT_TYPE_MAP = {
     "pcm": "audio/pcm",
 }
 
+ALLOWED_SPEECH_PARAMS = frozenset(
+    {"input", "voice", "response_format", "speed", "instructions"}
+)
+
 
 @v1_router.post("/audio/speech", response_model=None)
 @rate_limit_route(
@@ -68,14 +72,16 @@ async def v1_audio_speech(
         body.get("response_format", "mp3"), "audio/mpeg"
     )
 
+    params = {k: v for k, v in body.items() if k in ALLOWED_SPEECH_PARAMS}
+
     try:
         if body.get("stream"):
             return StreamingResponse(
-                await stream_speech(model, body),
+                await stream_speech(model, {"model": model, **params, "stream": True}),
                 media_type=content_type,
             )
 
-        response = await generate_speech(**body)
+        response = await generate_speech(model=model, **params)
         if not hasattr(response, "content"):
             return create_error_response(
                 ErrorCode.INTERNAL_ERROR,

@@ -17,6 +17,26 @@ logger = logging.getLogger(__name__)
 
 v1_router = APIRouter()
 
+ALLOWED_IMAGE_PARAMS = frozenset(
+    {
+        "prompt",
+        "n",
+        "size",
+        "quality",
+        "response_format",
+        "style",
+        "user",
+        "background",
+        "moderation",
+        "output_format",
+        "output_compression",
+        "num_inference_steps",
+        "guidance_scale",
+        "negative_prompt",
+        "seed",
+    }
+)
+
 
 @v1_router.post("/images/generations", response_model=ImageResponse)
 @rate_limit_route(
@@ -52,9 +72,16 @@ async def v1_images_generations(
             ErrorCode.MODEL_NOT_FOUND,
             f"model is not supported - {model}",
         )
+    elif model_settings.models.get(model).get("type", "") != "image_generation":
+        return create_error_response(
+            ErrorCode.MODEL_NOT_FOUND,
+            f"model does not support image generation - {model}",
+        )
+
+    params = {k: v for k, v in body.items() if k in ALLOWED_IMAGE_PARAMS}
 
     try:
-        response = await generate_image(**body)
+        response = await generate_image(model=model, **params)
         return response
     except Exception as e:
         logger.exception("Image generation failed")

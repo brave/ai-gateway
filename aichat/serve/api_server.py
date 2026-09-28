@@ -50,6 +50,7 @@ from aichat.serve.mcp_integration import (
     shutdown_shared_mcp_client,
     warmup_shared_mcp_client,
 )
+from aichat.serve.media_client import shutdown_client as shutdown_media_client
 from aichat.serve.metrics import instrument
 from aichat.serve.models_api import v1_router as models_router_v1
 from aichat.serve.ohttp import v1_router as ohttp_router_v1
@@ -57,7 +58,6 @@ from aichat.serve.open_ai_api import v1_router as open_ai_router_v1
 from aichat.serve.passthrough_api import v1_router as passthrough_router_v1
 from aichat.serve.server_settings import server_settings
 from aichat.serve.services.backend import initialize_backends
-from aichat.serve.services.media_sandbox import shutdown_pool
 from aichat.serve.share_api import v1_router as share_router_v1
 from aichat.serve.stt_api import v1_router as stt_router_v1
 from aichat.serve.system_one_api import v1_router as system_one_router_v1
@@ -115,7 +115,7 @@ async def lifespan(app: FastAPI):
             yield {"httpx_client": client}
         finally:
             await shutdown_shared_mcp_client(mcp_warmed)
-            await shutdown_pool()
+            await shutdown_media_client()
 
     if trim_task:
         trim_task.cancel()
