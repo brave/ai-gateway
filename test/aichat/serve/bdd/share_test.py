@@ -208,6 +208,7 @@ def orphaned_sidecar_assert(ctx):
     assert len(share_puts) == 1
     sidecar_puts = [k for k in puts if str(k.get("Key", "")).startswith("deletions/")]
     assert len(sidecar_puts) == 1
+    # Also guards against puts landing under unexpected key prefixes.
     assert len(puts) == len(share_puts) + len(sidecar_puts)
     # KNOWN BEHAVIOR (not a spec): share-put failure currently leaves the
     # deletion sidecar in place. If prod adds sidecar cleanup on share-put
