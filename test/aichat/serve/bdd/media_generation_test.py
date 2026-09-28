@@ -46,12 +46,6 @@ def _(ctx):
 # --- STT ---
 
 
-def _pool(result):
-    pool = MagicMock()
-    pool.call = AsyncMock(return_value=result)
-    return pool
-
-
 @when("a WAV upload is decoded through the sandbox returning pcm for 16000 samples")
 def _(ctx, monkeypatch):
     pcm = np.zeros(16000, dtype=np.float32).tobytes()
@@ -61,7 +55,7 @@ def _(ctx, monkeypatch):
         "sample_rate": 16000,
         "duration_ms": 250.0,
     }
-    monkeypatch.setattr(stt_gen, "get_pool", lambda: _pool(result))
+    monkeypatch.setattr(stt_gen, "call_stt_decode", AsyncMock(return_value=result))
     ctx["audio"], ctx["duration_ms"] = asyncio.run(
         stt_gen.decode_wav_pcm_to_mono_16k_float32(b"wav")
     )
@@ -75,7 +69,7 @@ def _(ctx, monkeypatch):
         "n_samples": 5,
         "duration_ms": 1.0,
     }
-    monkeypatch.setattr(stt_gen, "get_pool", lambda: _pool(result))
+    monkeypatch.setattr(stt_gen, "call_stt_decode", AsyncMock(return_value=result))
     try:
         asyncio.run(stt_gen.decode_wav_pcm_to_mono_16k_float32(b"wav"))
     except ValueError as e:
@@ -199,9 +193,9 @@ def _wire_upload(ctx, monkeypatch, n_samples, text):
     pcm = np.zeros(n_samples, dtype=np.float32).tobytes()
     monkeypatch.setattr(
         stt_gen,
-        "get_pool",
-        lambda: _pool(
-            {
+        "call_stt_decode",
+        AsyncMock(
+            return_value={
                 "pcm_b64": base64.b64encode(pcm).decode(),
                 "n_samples": n_samples,
                 "duration_ms": 0.0,

@@ -443,7 +443,7 @@ def _(ctx, defect, monkeypatch):
     monkeypatch.setattr(
         image_generation_api,
         "model_settings",
-        SimpleNamespace(models={"image-model": {"type": "image_gen"}}),
+        SimpleNamespace(models={"image-model": {"type": "image_generation"}}),
     )
     monkeypatch.setattr(
         image_generation_api,
@@ -464,7 +464,7 @@ def _(ctx, exc, text, monkeypatch):
     monkeypatch.setattr(
         image_generation_api,
         "model_settings",
-        SimpleNamespace(models={"image-model": {"type": "image_gen"}}),
+        SimpleNamespace(models={"image-model": {"type": "image_generation"}}),
     )
     side_effect = _raise_of(exc, text)
     monkeypatch.setattr(

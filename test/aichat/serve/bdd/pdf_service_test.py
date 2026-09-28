@@ -15,8 +15,8 @@ import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
 
 from aichat.serve.external_service_settings import external_service_settings
+from aichat.serve.media_client import SandboxOpError, SandboxWorkerError
 from aichat.serve.services import pdf as pdf_service
-from aichat.serve.services.media_sandbox import SandboxOpError, SandboxWorkerError
 
 FEATURE = "features/pdf_service.feature"
 scenarios(FEATURE)
@@ -29,14 +29,14 @@ def ctx():
     return {}
 
 
-class _FakePool:
+class _FakeAnalyzer:
     def __init__(self, result=None, error=None):
         self.result = result
         self.error = error
         self.calls = []
 
-    async def call(self, op, args):
-        self.calls.append((op, args))
+    async def __call__(self, args):
+        self.calls.append(args)
         if self.error is not None:
             raise self.error
         return self.result
@@ -53,8 +53,8 @@ def pdf_harness(ctx, monkeypatch):
         "file": {"file_data": _pdf_data_url(b"%PDF-fake")},
     }
     ctx["file_info"] = ctx["pdf_part"]["file"]
-    ctx["pool"] = _FakePool()
-    monkeypatch.setattr(pdf_service, "get_pool", lambda: ctx["pool"])
+    ctx["analyzer"] = _FakeAnalyzer()
+    monkeypatch.setattr(pdf_service, "call_pdf_analyze", ctx["analyzer"])
     return ctx
 
 
@@ -109,10 +109,10 @@ def analyze_pdf(ctx, budget):
     )
 )
 def sandbox_payload_assert(ctx, op, encoding, pages):
-    calls = ctx["pool"].calls
+    calls = ctx["analyzer"].calls
     assert len(calls) == 1
-    got_op, args = calls[0]
-    assert got_op == op
+    assert op == "pdf_analyze"
+    args = calls[0]
     assert args["pdf_b64"] == base64.b64encode(b"%PDF-analyzed").decode("ascii")
     assert args["encoding_name"] == encoding
     assert args["max_extraction_tokens"] == 4800
@@ -121,7 +121,7 @@ def sandbox_payload_assert(ctx, op, encoding, pages):
 
 @when("the sandbox worker dies during pdf analysis")
 def worker_dies_pdf_analysis(ctx):
-    ctx["pool"].error = SandboxWorkerError("worker died")
+    ctx["analyzer"].error = SandboxWorkerError("worker died")
     with pytest.raises(SandboxWorkerError) as exc:
         asyncio.run(pdf_service._analyze_pdf(b"%PDF-analyzed", 4800))
     ctx["error"] = exc.value
@@ -227,11 +227,11 @@ def process_parts(ctx, parts_desc, monkeypatch):
     elif parts_desc == "hit a sandbox op error":
         parts = [dict(ctx["pdf_part"])]
         ctx["expected_parts"] = parts
-        ctx["pool"].error = SandboxOpError("pdf_analyze failed in sandbox")
+        ctx["analyzer"].error = SandboxOpError("pdf_analyze failed in sandbox")
     elif parts_desc == "hit an unexpected error":
         parts = [dict(ctx["pdf_part"])]
         ctx["expected_parts"] = parts
-        ctx["pool"].error = RuntimeError("boom")
+        ctx["analyzer"].error = RuntimeError("boom")
     else:
         raise AssertionError(f"unknown parts description: {parts_desc}")
     ctx["processed"] = asyncio.run(
@@ -252,7 +252,7 @@ def processed_result(ctx, expected):
 
 @when("the sandbox worker dies during content part processing")
 def worker_dies_content_parts(ctx):
-    ctx["pool"].error = SandboxWorkerError("worker died")
+    ctx["analyzer"].error = SandboxWorkerError("worker died")
     with pytest.raises(SandboxWorkerError) as exc:
         asyncio.run(
             pdf_service.process_pdf_text_content_parts([dict(ctx["pdf_part"])], 4800)
@@ -267,7 +267,7 @@ def processing_raises_worker_error(ctx):
 
 @when("a pdf content part is processed with a successful analysis")
 def process_pdf_part_success(ctx):
-    ctx["pool"].result = {
+    ctx["analyzer"].result = {
         "passthrough": None,
         "total_pages": 90,
         "all_text": "hello text",
@@ -279,7 +279,7 @@ def process_pdf_part_success(ctx):
 
 @then("the sandbox op was called once and the parts contain the brave-pdf-text")
 def sandbox_called_once_with_brave_pdf_text(ctx):
-    assert len(ctx["pool"].calls) == 1
+    assert len(ctx["analyzer"].calls) == 1
     assert ctx["processed"] == [{"type": "brave-pdf-text", "text": "hello text"}]
 
 
