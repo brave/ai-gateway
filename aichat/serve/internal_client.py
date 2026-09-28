@@ -33,7 +33,7 @@ async def auth_verify(
     body_sha256_b64: str,
     x_forwarded_host: str | None,
     x_brave_key: str | None,
-    metadata: dict[str, Any] | None = None,
+    model: str | None = None,
 ) -> dict[str, Any] | None:
     return await _post(
         client,
@@ -44,7 +44,7 @@ async def auth_verify(
             "body_sha256_b64": body_sha256_b64,
             "x_forwarded_host": x_forwarded_host,
             "x_brave_key": x_brave_key,
-            "metadata": metadata,
+            "model": model,
         },
         idempotent=True,
     )

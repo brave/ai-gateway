@@ -139,8 +139,6 @@ async def create_base_common_params(
         "x_amzn_waf_incorrect_header_order": x_amzn_waf_incorrect_header_order,
         "is_valid_brave_services_key": is_valid_brave_services_key,
         "is_valid_brave_services_key_v2": is_valid_brave_services_key_v2,
-        # Set by check_brave_services_key_v2; True when internal API is off.
-        "request_allowed": getattr(raw_request.state, "request_allowed", True),
         "api_version": api_version,
     }
 
@@ -226,10 +224,6 @@ async def check_requests_common(
 
     if not common["is_valid_brave_services_key_v2"]:
         return create_error_response(ErrorCode.INVALID_AUTH_KEY, "Invalid services key")
-
-    if not common.get("request_allowed", True):
-        # Generic 400 — the specific reason is intentionally not surfaced.
-        return create_error_response(ErrorCode.INVALID_REQUEST, "Invalid request")
 
     if (not model.startswith("automatic")) and model not in model_settings.models:
         return create_error_response(

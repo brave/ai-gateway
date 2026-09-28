@@ -114,14 +114,11 @@ def _(ctx):
     assert ctx["auth_calls"][0]["body_sha256_b64"] == expected
 
 
-@then(parsers.parse('the auth request metadata excluded "{field}"'))
-def _(ctx, field):
-    assert field not in ctx["auth_calls"][0]["metadata"]
-
-
-@then(parsers.parse('the auth request metadata carries the chat model "{model}"'))
+@then(parsers.parse('the auth request carried only the chat model "{model}"'))
 def _(ctx, model):
-    assert ctx["auth_calls"][0]["metadata"]["model"] == model
+    call = ctx["auth_calls"][0]
+    assert call["model"] == model
+    assert "metadata" not in call
 
 
 @given(parsers.parse('messages for {user} and model "{model}"'))
@@ -343,7 +340,6 @@ def _(ctx):
         "model_override": True,
         "fallback_model": "fallback-model",
         "premium_fallback_model": "premium-fallback",
-        "request_allowed": False,
     }
 
 
@@ -365,13 +361,3 @@ def _(ctx, override, fallback):
 @then(parsers.parse('the request state carries premium fallback "{fallback}"'))
 def _(ctx, fallback):
     assert ctx["request"].state.model_override_premium_fallback == fallback
-
-
-@then(parsers.parse("the request state carries request_allowed {allowed}"))
-def _(ctx, allowed):
-    assert ctx["request"].state.request_allowed is (allowed == "true")
-
-
-@given("an auth verdict without a request_allowed field")
-def _(ctx):
-    ctx["verdict"] = {"service_key_allowed": True, "service_key_id": "sk-9"}

@@ -10,14 +10,13 @@ Feature: Request authentication verdicts
     When an auth verdict is requested for a chat payload
     Then no verdict is produced
 
-  Scenario: Auth verdict forwards only non-message metadata
+  Scenario: Auth verdict forwards only the chat model
     Given the internal API is enabled
     And aichat-internal answers auth requests with service_key_allowed true
     When an auth verdict is requested for a chat payload
     Then the verdict is returned
     And the auth request carried the body digest
-    And the auth request metadata excluded "messages"
-    And the auth request metadata carries the chat model "llama-2-13b-chat"
+    And the auth request carried only the chat model "llama-2-13b-chat"
 
   Scenario: Idempotency key is stable for identical payloads
     Given messages for alice and model "llama-2-13b-chat"
@@ -140,10 +139,3 @@ Feature: Request authentication verdicts
     And the request state carries "service_key_id" "sk-1"
     And the request state carries model override true with fallback "fallback-model"
     And the request state carries premium fallback "premium-fallback"
-    And the request state carries request_allowed false
-
-  Scenario: Request allowed defaults to true for older verdicts
-    Given the internal API is enabled
-    And an auth verdict without a request_allowed field
-    When the service key is checked
-    Then the request state carries request_allowed true

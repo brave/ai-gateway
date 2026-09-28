@@ -125,7 +125,6 @@ def when_build_common_params(ctx):
         "x_forwarded_for": None,
         "is_valid_brave_services_key": True,
         "is_valid_brave_services_key_v2": True,
-        "request_allowed": True,
         "api_version": 2,
     }
     ctx["common_result"] = asyncio.run(
@@ -167,7 +166,6 @@ def given_premium_no_sku(ctx):
         "has_valid_premium_credential": False,
         "is_valid_brave_services_key": True,
         "is_valid_brave_services_key_v2": True,
-        "request_allowed": True,
         "x_forwarded_for": None,
         "is_automatic_model_request": False,
         "api_version": 2,
@@ -248,7 +246,6 @@ def when_common_checks(model, ctx):
         "has_valid_premium_credential": False,
         "is_valid_brave_services_key": True,
         "is_valid_brave_services_key_v2": True,
-        "request_allowed": True,
         "x_forwarded_for": None,
         "x_forwarded_host": None,
         "is_automatic_model_request": model == "automatic",
@@ -257,8 +254,6 @@ def when_common_checks(model, ctx):
     common["model"] = model
     if state == "invalid_services_key":
         common["is_valid_brave_services_key_v2"] = False
-    elif state == "request_not_allowed":
-        common["request_allowed"] = False
     elif state == "unknown_model":
         # Relies on the catalog given: "mystery-m" is intentionally absent.
         assert model not in ctx["catalog"]
@@ -273,7 +268,6 @@ def when_common_checks(model, ctx):
     raw = MagicMock()
     raw.state.capability = ctx.get("capability")
     raw.state.service_key_id = "svc-1"
-    raw.state.request_allowed = True
     raw.state.httpx_client = None
     ctx["common_result"] = asyncio.run(common_api.check_requests_common(raw, common))
 
