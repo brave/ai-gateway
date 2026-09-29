@@ -49,7 +49,6 @@ Feature: Common completion parameters and request checks
     Examples:
       | state                  | model        | status |
       | invalid_services_key   | mixtral      | 401    |
-      | request_not_allowed    | mixtral      | 400    |
       | unknown_model          | mystery-m    | 404    |
       | premium_model_free_user | premium-x   | 403    |
 

@@ -90,7 +90,7 @@ def _(ctx):
             body_sha256_b64="h",
             x_forwarded_host=None,
             x_brave_key=None,
-            metadata={"model": "m"},
+            model="m",
         )
     )
 
@@ -154,7 +154,7 @@ def _(ctx):
         "body_sha256_b64": "h",
         "x_forwarded_host": None,
         "x_brave_key": None,
-        "metadata": {"model": "m"},
+        "model": "m",
     }
 
 
