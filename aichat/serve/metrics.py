@@ -15,7 +15,7 @@ from aichat.serve.api_version import api_version_from_path
 
 PDF_FILE_PART_ENCOUNTERED = Counter(
     name="pdf_file_part_encountered_total",
-    documentation="Total number of PDF file parts encountered, before any pypdf processing",
+    documentation="Total number of PDF file parts encountered, before sandbox processing",
     registry=REGISTRY,
 )
 

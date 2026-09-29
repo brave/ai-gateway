@@ -1,11 +1,4 @@
 # BDD coverage for aichat/serve/services/pdf.py.
-#
-# TODO: remove test/aichat/serve/services/pdf_test.py#test_is_pdf_file_data test/aichat/serve/services/pdf_test.py:31
-# TODO: remove test/aichat/serve/services/pdf_test.py#test_decode_pdf_bytes test/aichat/serve/services/pdf_test.py:46
-# TODO: remove test/aichat/serve/services/pdf_test.py#test_compute_max_extraction_tokens test/aichat/serve/services/pdf_test.py:54
-# TODO: remove test/aichat/serve/services/pdf_test.py#test_process_pdf_text_content_parts_sync test/aichat/serve/services/pdf_test.py:70
-# TODO: remove test/aichat/serve/services/pdf_test.py#test_process_pdf_text_content_parts test/aichat/serve/services/pdf_test.py:140
-# TODO: remove test/aichat/serve/services/pdf_test.py#test_process_messages_for_pdf_limits test/aichat/serve/services/pdf_test.py:171
 
 import asyncio
 import base64
