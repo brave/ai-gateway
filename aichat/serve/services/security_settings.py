@@ -1,4 +1,11 @@
+import logging
+
 from pydantic_settings import BaseSettings
+
+from aichat.serve.constants import PRODUCTION
+from aichat.serve.server_settings import server_settings
+
+logger = logging.getLogger(__name__)
 
 
 class SecuritySettings(BaseSettings):
@@ -32,3 +39,13 @@ class SecuritySettings(BaseSettings):
 
 
 security_settings = SecuritySettings()
+
+
+def check_internal_models_api_key() -> None:
+    if security_settings.internal_models_api_key:
+        return
+    if server_settings.env == PRODUCTION:
+        raise RuntimeError("INTERNAL_MODELS_API_KEY must be set when ENV=production")
+    logger.warning(
+        "INTERNAL_MODELS_API_KEY is unset; internal model routes are unauthenticated"
+    )
