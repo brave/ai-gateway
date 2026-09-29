@@ -255,7 +255,7 @@ def then_summary(ctx):
 def then_summary_first(ctx):
     # The original system prompt is preserved; the summary follows it directly.
     first = ctx["result"][1]
-    assert first["role"] == "system"
+    assert first["role"] == "assistant"
     assert first["content"].startswith(
         "The text in <context> tags is what you already know from earlier"
     )
@@ -286,7 +286,9 @@ def then_multi_chunk_logged(ctx, caplog):
 
 @then("section labels cover start and end")
 def then_section_labels(ctx):
-    contents = [m["content"] for m in ctx["result"] if m.get("role") == "system"]
+    contents = [
+        m["content"] for m in ctx["result"] if compaction_module._is_summary_message(m)
+    ]
     notes = "\n".join(contents)
     # _section_label pins "start" for the first chunk and "end" for the last;
     # a multi-chunk compaction must produce both notes.

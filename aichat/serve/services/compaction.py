@@ -31,6 +31,8 @@ from aichat.serve.utils import calculate_message_tokens, count_tokens
 
 logger = logging.getLogger(__name__)
 
+COMPACTION_SUMMARY_MESSAGE_NAME = "aichat-compaction-summary"
+
 
 # =============================================================================
 # OpenAI API Compaction Functions
@@ -458,12 +460,16 @@ def _extract_summary_text(msg: dict) -> str:
 
 
 def _is_summary_message(msg: dict) -> bool:
-    return "<context>" in msg.get("content", "")
+    """Gateway-authored compaction summaries (same request as create_summary_message)."""
+    return msg.get("name") == COMPACTION_SUMMARY_MESSAGE_NAME
 
 
 def create_summary_message(summary: str, section: str | None = None) -> dict:
     """
-    Create an OpenAI-format system message containing the compaction summary.
+    Create an OpenAI-format assistant message containing the compaction summary.
+
+    The summary is model-generated and treated as untrusted, so it is not
+    placed in the system message.
 
     Args:
         summary: The generated summary text
@@ -476,7 +482,8 @@ def create_summary_message(summary: str, section: str | None = None) -> dict:
     if section:
         section_note = f"This is a compaction of the {section} of the conversation.\n\n"
     return {
-        "role": "system",
+        "role": "assistant",
+        "name": COMPACTION_SUMMARY_MESSAGE_NAME,
         "content": (
             section_note
             + "The text in <context> tags is what you already know from earlier "
