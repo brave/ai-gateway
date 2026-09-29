@@ -7,6 +7,7 @@ import logging
 from aichat.protocol.open_ai_protocol import Message
 from aichat.serve.androcles import (
     androcles_inference,
+    androcles_inference_batch,
     task_type_from_androcles_probabilities,
 )
 from aichat.serve.services.androcles_prefetch import AndroclesPrefetch
@@ -19,7 +20,7 @@ from aichat.serve.services.dynamic_leo.config import (
 )
 from aichat.serve.services.dynamic_leo.embedding_gemma import (
     categories_have_similar_phrases,
-    embedding_match_reasons_for_text,
+    embedding_match_reasons_for_texts,
     phrase_vectors_for_request,
     unique_similar_phrases_sorted,
 )
@@ -87,6 +88,14 @@ def _gather_result_or_default(result, default):
     return result
 
 
+def _androcles_probs_from_batch(
+    probs: list | tuple | None,
+) -> tuple[list[float] | None, list[float] | None]:
+    if isinstance(probs, (list, tuple)) and len(probs) >= 2:
+        return probs[0], probs[1]
+    return None, None
+
+
 def _embedding_model_id() -> str | None:
     explicit = dynamic_leo_settings.dynamic_leo_embedding_model.strip()
     if explicit:
@@ -148,49 +157,17 @@ async def run_dynamic_leo(messages: list[Message]) -> AndroclesPrefetch | None:
                 logger.warning("Dynamic Leo phrase embedding prefetch failed: %s", exc)
                 phrase_vectors = {}
 
-    async def _androcles_if_nonempty(text: str) -> list[float] | None:
-        if not text.strip():
-            return None
-        return await androcles_inference(
-            text,
-            timeout_seconds=dynamic_leo_settings.dynamic_leo_androcles_timeout_seconds,
-        )
-
-    coros: list = [
-        _androcles_if_nonempty(last_text),
-        _androcles_if_nonempty(prior_text),
-    ]
-    if need_embed:
-        em = embedding_model_id or ""
-        coros.extend(
-            [
-                embedding_match_reasons_for_text(
-                    last_text,
-                    em,
-                    categories,
-                    phrase_vectors,
-                    thresh,
-                    reason_tag="embedding_last",
-                ),
-                embedding_match_reasons_for_text(
-                    prior_text,
-                    em,
-                    categories,
-                    phrase_vectors,
-                    thresh,
-                    reason_tag="embedding_prior",
-                ),
-            ]
-        )
-    results = await asyncio.gather(*coros, return_exceptions=True)
-    probs_last = _gather_result_or_default(results[0], None)
-    probs_prior = _gather_result_or_default(results[1], None)
-    if need_embed:
-        embed_last = _gather_result_or_default(results[2], {})
-        embed_prior = _gather_result_or_default(results[3], {})
-        embed_reasons = _merge_reason_dicts(embed_last, embed_prior)
-    else:
-        embed_reasons = {}
+    do_embed = need_embed and bool(phrase_vectors)
+    probs_last, probs_prior, embed_reasons = await _gather_androcles_and_embeddings(
+        last_text,
+        prior_text,
+        batch_androcles=dynamic_leo_settings.dynamic_leo_batch_inference,
+        do_embed=do_embed,
+        embedding_model_id=embedding_model_id,
+        categories=categories or {},
+        phrase_vectors=phrase_vectors,
+        thresh=thresh,
+    )
 
     if categories:
         lbl_reasons = label_reasons(categories, probs_last, probs_prior)
@@ -208,3 +185,64 @@ async def run_dynamic_leo(messages: list[Message]) -> AndroclesPrefetch | None:
         task_type=task_type_from_androcles_probabilities(merged_probs),
         matched_categories=frozenset(merged_reasons.keys()),
     )
+
+
+async def _maybe_androcles(text: str) -> list | None:
+    if not text.strip():
+        return None
+    return await androcles_inference(
+        text,
+        timeout_seconds=dynamic_leo_settings.dynamic_leo_androcles_timeout_seconds,
+    )
+
+
+async def _gather_androcles_and_embeddings(
+    last_text: str,
+    prior_text: str,
+    *,
+    batch_androcles: bool,
+    do_embed: bool,
+    embedding_model_id: str | None,
+    categories: dict[str, DynamicLeoCategoryConfig],
+    phrase_vectors: dict[str, list[float]],
+    thresh: float,
+) -> tuple[list[float] | None, list[float] | None, dict[str, frozenset[str]]]:
+    em = embedding_model_id or ""
+    timeout = dynamic_leo_settings.dynamic_leo_androcles_timeout_seconds
+    tasks: list = []
+    if batch_androcles:
+        tasks.append(
+            androcles_inference_batch([last_text, prior_text], timeout_seconds=timeout)
+        )
+    else:
+        tasks.extend([_maybe_androcles(last_text), _maybe_androcles(prior_text)])
+
+    embed_index: int | None = None
+    if do_embed:
+        embed_index = len(tasks)
+        tasks.append(
+            embedding_match_reasons_for_texts(
+                [(last_text, "embedding_last"), (prior_text, "embedding_prior")],
+                em,
+                categories,
+                phrase_vectors,
+                thresh,
+            )
+        )
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    if batch_androcles:
+        probs_last, probs_prior = _androcles_probs_from_batch(
+            _gather_result_or_default(results[0], None)
+        )
+    else:
+        probs_last = _gather_result_or_default(results[0], None)
+        probs_prior = _gather_result_or_default(results[1], None)
+
+    embed_reasons = (
+        _gather_result_or_default(results[embed_index], {})
+        if embed_index is not None
+        else {}
+    )
+    return probs_last, probs_prior, embed_reasons

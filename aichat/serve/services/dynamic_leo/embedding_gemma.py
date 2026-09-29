@@ -156,30 +156,60 @@ async def embedding_match_reasons_for_text(
     *,
     reason_tag: str,
 ) -> dict[str, frozenset[str]]:
-    outcome: dict[str, frozenset[str]] = {}
     if not embedding_model_id or not fused_text.strip() or not phrase_vectors:
-        return outcome
+        return {}
+    return await embedding_match_reasons_for_texts(
+        [(fused_text, reason_tag)],
+        embedding_model_id,
+        categories,
+        phrase_vectors,
+        threshold,
+    )
+
+
+async def embedding_match_reasons_for_texts(
+    texts_with_tags: list[tuple[str, str]],
+    embedding_model_id: str,
+    categories: dict[str, DynamicLeoCategoryConfig],
+    phrase_vectors: dict[str, list[float]],
+    threshold: float,
+) -> dict[str, frozenset[str]]:
+    merged: dict[str, set[str]] = {}
+    if not embedding_model_id or not phrase_vectors:
+        return {}
+    eligible = [(t, tag) for t, tag in texts_with_tags if t and t.strip()]
+    if not eligible:
+        return {}
+
+    batch_inputs = [format_embeddinggemma_input(t) for t, _ in eligible]
     try:
-        query_body = format_embeddinggemma_input(fused_text)
-        query_resp = await _generate_embeddings_with_timeout(
-            embedding_model_id, query_body
-        )
-        query_rows = query_resp.get("data") or []
-        if not query_rows:
-            return outcome
-        query_vec = query_rows[0].get("embedding")
-        if not isinstance(query_vec, list) or not query_vec:
-            return outcome
+        resp = await _generate_embeddings_with_timeout(embedding_model_id, batch_inputs)
     except TimeoutError:
         logger.warning(
-            "Dynamic Leo query embedding timed out after %.3fs",
+            "Dynamic Leo batched query embedding timed out after %.3fs",
             dynamic_leo_settings.dynamic_leo_embedding_timeout_seconds,
         )
-        return outcome
+        return {}
     except Exception as exc:
-        logger.warning("Dynamic Leo query embedding failed: %s", exc)
-        return outcome
+        logger.warning("Dynamic Leo batched query embedding failed: %s", exc)
+        return {}
 
-    return embedding_reasons_for_query_vec(
-        query_vec, categories, phrase_vectors, threshold, reason_tag
-    )
+    rows = resp.get("data") or []
+    if len(rows) != len(eligible):
+        logger.warning(
+            "Dynamic Leo batched query embedding size mismatch: got %d expected %d",
+            len(rows),
+            len(eligible),
+        )
+        return {}
+
+    for (_, tag), row in zip(eligible, rows, strict=True):
+        query_vec = row.get("embedding")
+        if not isinstance(query_vec, list) or not query_vec:
+            continue
+        for cat_id, reasons in embedding_reasons_for_query_vec(
+            query_vec, categories, phrase_vectors, threshold, tag
+        ).items():
+            merged.setdefault(cat_id, set()).update(reasons)
+
+    return {cat_id: frozenset(reasons) for cat_id, reasons in merged.items()}
