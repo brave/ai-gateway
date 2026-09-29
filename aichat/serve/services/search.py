@@ -19,15 +19,22 @@ _headers = {
     "Accept-Encoding": "gzip",
 }
 
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _sanitize_query(query: str) -> str:
+    query = _CONTROL_CHARS.sub(" ", query).strip()
+    return query[: search_settings.max_inline_search_query_length].strip()
+
 
 def _get_new_inline_searches(seen: set[str], completion: str) -> list[str]:
     """Get new inline queries from the completion"""
     regex = r"^::search\[(.+?)\]{type=(\w+)}$"
     for match in re.findall(regex, completion, re.MULTILINE):
-        query = match[0]
+        query = _sanitize_query(match[0])
         query_type = match[1]
 
-        if query not in seen:
+        if query and query not in seen:
             seen.add(query)
             yield query, query_type
 
@@ -43,8 +50,10 @@ async def _do_inline_search(httpx_client, query: str, type: str):
         search_endpoint = "images"
 
     headers = {**_headers, "X-Subscription-Token": search_settings.brave_search_api_key}
-    url = f"{search_settings.brave_search_api_url}/res/v1/{search_endpoint}/search?q={query}&type={type}"
-    response = await httpx_client.get(url, headers=headers)
+    url = f"{search_settings.brave_search_api_url}/res/v1/{search_endpoint}/search"
+    response = await httpx_client.get(
+        url, params={"q": query, "type": type}, headers=headers
+    )
 
     # Raise an exception if we didn't get a success status code.
     if response.status_code != 200:
