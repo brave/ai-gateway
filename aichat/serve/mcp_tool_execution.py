@@ -70,9 +70,7 @@ async def execute_tools_and_stream_events(
     tool_executor = ToolExecutor(mcp_executor)
     registry = get_global_registry()
 
-    if mcp_executor._tool_cache is None:
-        mcp_client = await mcp_executor._get_mcp_client()
-        mcp_executor._tool_cache = await mcp_executor._fetch_all_tools(mcp_client)
+    await mcp_executor.ensure_tool_catalog_loaded()
 
     model_name = (actual_model or request_model).replace(" ", "")
 

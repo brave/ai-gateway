@@ -67,6 +67,18 @@ def has_stdio_mcp_servers(server_configs: list[dict[str, Any]] | None = None) ->
     return False
 
 
+def has_enabled_mcp_servers(server_configs: list[dict[str, Any]] | None = None) -> bool:
+    """True when MCP_SERVERS includes at least one enabled server."""
+    configs = server_configs if server_configs is not None else mcp_settings.mcp_servers
+    for server_config in configs:
+        if server_config.get("enabled", True):
+            return True
+    return False
+
+
+MCP_TOOLS_CATALOG_CACHE_KEY = "mcp_tools_catalog"
+
+
 def _parse_fastmcp_tags(tool_data: dict[str, Any]) -> frozenset[str]:
     """Extract FastMCP tags from an MCP tools/list tool entry.
 
@@ -413,6 +425,20 @@ class MCPClient:
             logger.error(f"Failed to initialize MCP server {server.name}: {e}")
             return False
 
+    def clear_http_server_init(self, server: MCPServerConfig) -> None:
+        """Drop HTTP session state so the next request re-runs initialize."""
+        if server.transport == "stdio":
+            return
+        server_key = f"{server.name}:{server.url}"
+        self._initialized_servers.pop(server_key, None)
+        self._session_ids.pop(server_key, None)
+
+    async def ensure_http_server_initialized(self, server: MCPServerConfig) -> bool:
+        """Ensure an HTTP MCP server has a live initialize/session handshake."""
+        if server.transport == "stdio":
+            return await self.get_stdio_transport(server).initialize()
+        return await self._initialize_server(server)
+
     def _prepare_headers(self, server: MCPServerConfig) -> dict[str, str]:
         """Prepare HTTP headers for MCP requests including session management."""
         headers = {
@@ -509,6 +535,21 @@ class MCPClient:
         logger.info(f"Fetched {len(tools)} tools from server '{server.name}'")
         return tools
 
+    async def get_cached_tool_catalog(self) -> list[MCPTool]:
+        """Return the full MCP tool catalog, using the TTL cache when valid."""
+        cached_catalog = self.cache.get(MCP_TOOLS_CATALOG_CACHE_KEY)
+        if cached_catalog is not None:
+            return cached_catalog
+
+        all_mcp_tools: list[MCPTool] = []
+        for server in self.servers:
+            tools = await self.fetch_tools_from_server(server)
+            if tools:
+                all_mcp_tools.extend(tools)
+        self.cache.set(MCP_TOOLS_CATALOG_CACHE_KEY, all_mcp_tools)
+        logger.info(f"Cached {len(all_mcp_tools)} MCP tools in catalog")
+        return all_mcp_tools
+
     @staticmethod
     def convert_to_openai_format(mcp_tool: MCPTool) -> Tool:
         """
@@ -599,18 +640,9 @@ class MCPClient:
         Returns:
             List of OpenAI-compatible tools
         """
-        cache_key = "mcp_tools_catalog"
-        cached_catalog = self.cache.get(cache_key)
-
+        cached_catalog = self.cache.get(MCP_TOOLS_CATALOG_CACHE_KEY)
         if cached_catalog is None:
-            all_mcp_tools: list[MCPTool] = []
-            for server in self.servers:
-                tools = await self.fetch_tools_from_server(server)
-                if tools:
-                    all_mcp_tools.extend(tools)
-            cached_catalog = all_mcp_tools
-            self.cache.set(cache_key, cached_catalog)
-            logger.info(f"Cached {len(cached_catalog)} MCP tools in catalog")
+            cached_catalog = await self.get_cached_tool_catalog()
         else:
             logger.info("Returning cached MCP tools catalog")
 
