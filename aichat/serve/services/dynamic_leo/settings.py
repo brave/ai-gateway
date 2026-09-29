@@ -14,6 +14,7 @@ class DynamicLeoSettings(BaseSettings):
     dynamic_leo_embedding_model: str = ""
     dynamic_leo_embedding_timeout_seconds: float = 1.0
     dynamic_leo_androcles_timeout_seconds: float = 1.0
+    dynamic_leo_batch_inference: bool = False
 
 
 dynamic_leo_settings = DynamicLeoSettings()

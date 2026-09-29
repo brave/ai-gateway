@@ -418,7 +418,7 @@ def when_prefetch_raises(ctx):
     async def _no_embeddings(*args, **kwargs):
         raise AssertionError("embedding path must not run when prefetch fails")
 
-    mp.setattr(signals, "embedding_match_reasons_for_text", _no_embeddings)
+    mp.setattr(signals, "embedding_match_reasons_for_texts", _no_embeddings)
 
     ctx["prefetch"] = asyncio.run(
         signals.run_dynamic_leo([_user_message("track my package please")])
@@ -521,7 +521,7 @@ def when_dleo_keywords(ctx):
     )
     # Keyword-only config must never reach the embedding path; make any
     # accidental embedding call fail loudly.
-    for fn in ("phrase_vectors_for_request", "embedding_match_reasons_for_text"):
+    for fn in ("phrase_vectors_for_request", "embedding_match_reasons_for_texts"):
 
         async def _boom(*args, **kwargs):
             raise AssertionError("embedding path must not run for keyword configs")
