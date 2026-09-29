@@ -31,7 +31,8 @@ CITATION_FIXTURES = {
     "numbered and linked": [{"number": 1, "url": "https://ex one.example/a (b)"}],
     "missing number": [{"url": "https://x.example"}],
     "missing url": [{"number": 2}],
-    "hostnameless url falls back": [{"number": 3, "url": "weird url no scheme"}],
+    "javascript url": [{"number": 3, "url": "javascript:alert(1)"}],
+    "schemeless url": [{"number": 3, "url": "weird url no scheme"}],
     "none": [],
 }
 
@@ -58,16 +59,15 @@ def then_map_entries(ctx):
         assert entry["url"]
         assert entry["hostname"]
         assert entry["encoded_url"]
-    if not cmap:
-        return
     if 1 in cmap:
         assert cmap[1]["url"] == "https://ex one.example/a (b)"
         assert cmap[1]["encoded_url"] == "https://ex%20one.example/a%20%28b%29"
         assert cmap[1]["hostname"] == "ex one.example"
-    else:
-        # Hostnameless urls fall back to the raw url for both fields.
-        fallback = next(iter(cmap.values()))
-        assert fallback["hostname"] == fallback["url"] == "weird url no scheme"
+
+
+@then("the citation entry is blanked")
+def then_entry_blanked(ctx):
+    assert ctx["cmap"][3] == {"url": "", "encoded_url": "", "hostname": ""}
 
 
 @given('an answer "The sky is blue[1] indeed"')
