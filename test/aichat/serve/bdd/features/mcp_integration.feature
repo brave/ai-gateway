@@ -15,29 +15,29 @@ Feature: MCP integration helpers
     When a client is obtained for the request
     Then the shared client is reused
 
-  Scenario: Client for request creates a fallback client
+  Scenario: Shared client creation creates and stores a new client
     Given no shared MCP client
     When a client is obtained for the request
     Then a new MCP client is created
 
-  Scenario Outline: Warmup skips when disabled or no stdio servers
-    Given mcp enabled is <enabled> and stdio servers are <stdio>
+  Scenario Outline: Warmup skips when disabled or no enabled servers
+    Given mcp enabled is <enabled> and enabled servers are <enabled_servers>
     When the shared MCP client warmup runs
     Then the warmup result is <outcome>
 
     Examples:
-      | enabled | stdio | outcome |
-      | false   | yes   | none    |
-      | true    | no    | none    |
-      | false   | no    | none    |
+      | enabled | enabled_servers | outcome |
+      | false   | yes             | none    |
+      | true    | no              | none    |
+      | false   | no              | none    |
 
   Scenario: Warmup starts stdio subprocesses and caches the client
-    Given mcp enabled is true and stdio servers exist
+    Given mcp enabled is true and enabled servers exist
     When the shared MCP client warmup runs
-    Then a client is warmed up and returned unshared
+    Then a client is warmed up and cached as shared
 
   Scenario: Warmup failure degrades gracefully
-    Given mcp enabled is true and stdio servers exist but startup fails
+    Given mcp enabled is true and enabled servers exist but startup fails
     When the shared MCP client warmup runs
     Then the warmup result is none
 

@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
@@ -59,7 +59,7 @@ def given_no_shared():
 
 @when("a client is obtained for the request")
 def when_client_for_request(ctx):
-    ctx["client"] = mcp_integration._client_for_request(MagicMock())
+    ctx["client"] = asyncio.run(mcp_integration.get_or_create_shared_mcp_client())
 
 
 @then("the shared client is reused")
@@ -74,10 +74,7 @@ def then_new_client(ctx):
     client = ctx["client"]
     assert isinstance(client, MCPClient)
     assert client is not ctx.get("shared")
-    # The fallback client is real: MCPClient.__init__ only stores the
-    # registry (no I/O, no subprocess spawn — spawning happens in
-    # get_tools), so constructing it against a bare MagicMock registry is
-    # safe. Close it so no transports leak.
+    assert mcp_integration.get_shared_mcp_client() is client
     asyncio.run(client.close_all_stdio_transports())
 
 
@@ -91,8 +88,9 @@ def _make_fake_client(ctx):
             FakeMCPClient.constructed += 1
             self.registry = registry
             self.get_tools = AsyncMock(return_value=[])
+            self.get_cached_tool_catalog = AsyncMock(return_value=[])
             if ctx.get("warmup_raises"):
-                self.get_tools.side_effect = RuntimeError("warmup boom")
+                self.get_cached_tool_catalog.side_effect = RuntimeError("warmup boom")
             self.close_all_stdio_transports = AsyncMock()
             self.get_tools_with_guidance = AsyncMock(
                 return_value=([], ctx.get("guidance", {}))
@@ -103,28 +101,37 @@ def _make_fake_client(ctx):
     return FakeMCPClient
 
 
-def _patch_mcp(monkeypatch, ctx, *, enabled, stdio):
+def _patch_mcp(monkeypatch, ctx, *, enabled, stdio, enabled_servers=True):
     monkeypatch.setattr(
         mcp_integration,
         "mcp_settings",
         SimpleNamespace(
             mcp_enabled=enabled,
             deep_research_enabled=False,
-            # Any other attr read by warmup/guidance must AttributeError
-            # loudly, so only the fields prod reads today are provided.
-            mcp_servers=[],
+            mcp_servers=[{"enabled": True}] if enabled_servers else [],
         ),
     )
     monkeypatch.setattr(mcp_integration, "has_stdio_mcp_servers", lambda: stdio)
+    monkeypatch.setattr(
+        mcp_integration, "has_enabled_mcp_servers", lambda: enabled_servers
+    )
     fake_cls = _make_fake_client(ctx)
     monkeypatch.setattr(mcp_integration, "MCPClient", fake_cls)
     ctx["mcp_client_cls"] = fake_cls
     return fake_cls
 
 
-@given(parsers.parse("mcp enabled is {enabled} and stdio servers are {stdio}"))
-def given_warmup_config(ctx, monkeypatch, enabled, stdio):
-    _patch_mcp(monkeypatch, ctx, enabled=enabled == "true", stdio=stdio == "yes")
+@given(
+    parsers.parse("mcp enabled is {enabled} and enabled servers are {enabled_servers}")
+)
+def given_warmup_config(ctx, monkeypatch, enabled, enabled_servers):
+    _patch_mcp(
+        monkeypatch,
+        ctx,
+        enabled=enabled == "true",
+        stdio=False,
+        enabled_servers=enabled_servers == "yes",
+    )
 
 
 @when("the shared MCP client warmup runs")
@@ -147,25 +154,23 @@ def then_warmup(ctx, outcome):
         assert ctx["mcp_client_cls"].constructed == 1
 
 
-@given("mcp enabled is true and stdio servers exist")
+@given("mcp enabled is true and enabled servers exist")
 def given_warmup_ready(ctx, monkeypatch):
-    _patch_mcp(monkeypatch, ctx, enabled=True, stdio=True)
+    _patch_mcp(monkeypatch, ctx, enabled=True, stdio=True, enabled_servers=True)
 
 
-@then("a client is warmed up and returned unshared")
+@then("a client is warmed up and cached as shared")
 def then_warmed(ctx):
     client = ctx["warmup_result"]
     assert client is not None
-    client.get_tools.assert_awaited_once()
-    # warmup_shared_mcp_client returns the client but does NOT store it;
-    # storing is the lifespan's job, so the shared slot stays empty here.
-    assert mcp_integration.get_shared_mcp_client() is None
+    client.get_cached_tool_catalog.assert_awaited_once()
+    assert mcp_integration.get_shared_mcp_client() is client
 
 
-@given("mcp enabled is true and stdio servers exist but startup fails")
+@given("mcp enabled is true and enabled servers exist but startup fails")
 def given_warmup_fails(ctx, monkeypatch):
     ctx["warmup_raises"] = True
-    _patch_mcp(monkeypatch, ctx, enabled=True, stdio=True)
+    _patch_mcp(monkeypatch, ctx, enabled=True, stdio=True, enabled_servers=True)
 
 
 @given(parsers.parse("a shared client that is {state}"))

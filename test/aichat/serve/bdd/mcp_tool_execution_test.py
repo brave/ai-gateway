@@ -76,6 +76,7 @@ def _fake_executor(result):
 def _mcp_executor():
     ex = Mock()
     ex._tool_cache = {"tools": True}
+    ex.ensure_tool_catalog_loaded = AsyncMock()
     return ex
 
 
