@@ -64,8 +64,7 @@ class TestInlineSearchHelperHandleReceivedCompletion:
     async def test_respects_max_inline_searches(self):
         async with httpx.AsyncClient() as client:
             helper = InlineSearchHelper(client)
-            with patch("aichat.serve.services.search.search_settings") as mock_settings:
-                mock_settings.max_inline_searches = 2
+            with patch.object(search_settings, "max_inline_searches", 2):
                 helper.handle_received_completion(
                     "::search[query 0]{type=web}\n"
                     "::search[query 1]{type=web}\n"

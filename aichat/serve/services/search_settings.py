@@ -23,6 +23,7 @@ class SearchSettings(BaseSettings):
     function_calling_enabled: bool = False
     use_content_search: bool = False
     max_inline_searches: int = 10
+    max_inline_search_query_length: int = 400
     max_function_calls: int = 1
     max_queries_per_round: int = 2
     conversation_limit_for_search_augmentation: int = 4
