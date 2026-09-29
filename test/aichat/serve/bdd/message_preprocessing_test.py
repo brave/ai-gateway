@@ -18,7 +18,10 @@ from aichat.protocol.open_ai_protocol import (
     UserMessage,
 )
 from aichat.serve.external_service_settings import external_service_settings
-from aichat.serve.message_preprocessing import preprocess_messages
+from aichat.serve.message_preprocessing import (
+    UnsupportedContentError,
+    preprocess_messages,
+)
 from test.aichat.serve.bdd.helpers import (
     dataclass_model_config as _model_config,
 )
@@ -160,12 +163,6 @@ def given_file_message(ctx):
     ]
 
 
-# NOTE: FileUrlContentPart parts crash _strip_file_parts in production
-# (aichat/serve/message_preprocessing.py accesses part.file which
-# FileUrlContentPart does not define). The inline-file scenario above is
-# limited to inline files; the dedicated xfail scenario below pins the bug.
-
-
 @given("a message with a file url part")
 def given_file_url_message(ctx):
     ctx["messages"] = [
@@ -190,15 +187,9 @@ def when_file_url_preprocessed(ctx):
         ctx["file_url_error"] = exc
 
 
-@then("preprocessing fails with the known file url strip bug")
-def then_file_url_strip_bug(ctx):
-    err = ctx["file_url_error"]
-    if err is None:
-        pytest.fail(
-            "prod bug fixed: rewrite this scenario to assert text-note replacement"
-        )
-    assert isinstance(err, AttributeError)
-    pytest.xfail(f"prod bug: _strip_file_parts assumes part.file ({err})")
+@then("preprocessing rejects the file url part as unsupported content")
+def then_file_url_rejected(ctx):
+    assert isinstance(ctx["file_url_error"], UnsupportedContentError)
 
 
 @given("a model without image support")
