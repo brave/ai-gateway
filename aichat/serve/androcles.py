@@ -20,7 +20,19 @@ ANDROCLES_TRIAGE_THRESHOLDS = {
 logger = logging.getLogger(__name__)
 
 
-def _androcles_batch_probs_rows(probs_list: list, batch_size: int) -> list[list]:
+def _coerce_probability(value) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise TypeError(
+            f"Unexpected Androcles probability type: {type(value).__name__}"
+        )
+    return float(value)
+
+
+def _coerce_probability_vector(values: list) -> list[float]:
+    return [_coerce_probability(value) for value in values]
+
+
+def _androcles_batch_probs_rows(probs_list: list, batch_size: int) -> list[list[float]]:
     """Normalize Triton output to one probability vector per batch row."""
     if not isinstance(probs_list, list) or not probs_list:
         raise ValueError("Empty or invalid Androcles batch output")
@@ -30,16 +42,18 @@ def _androcles_batch_probs_rows(probs_list: list, batch_size: int) -> list[list]
                 f"Unexpected Androcles batch row count: got {len(probs_list)} "
                 f"expected {batch_size}"
             )
-        return probs_list
-    if len(probs_list) % batch_size != 0:
+        rows = probs_list
+    elif len(probs_list) % batch_size != 0:
         raise ValueError(
             f"Unexpected Androcles batch flat length: got {len(probs_list)} "
             f"for batch_size {batch_size}"
         )
-    row_len = len(probs_list) // batch_size
-    return [
-        list(probs_list[i * row_len : (i + 1) * row_len]) for i in range(batch_size)
-    ]
+    else:
+        row_len = len(probs_list) // batch_size
+        rows = [
+            list(probs_list[i * row_len : (i + 1) * row_len]) for i in range(batch_size)
+        ]
+    return [_coerce_probability_vector(row) for row in rows]
 
 
 async def androcles_inference(
@@ -81,9 +95,12 @@ async def androcles_inference(
         },
     }
 
-    async def _call() -> list:
+    async def _call() -> list[float]:
         response = await router.allm_passthrough_route(**request_data)
-        return response.json()["outputs"][0]["data"]
+        data = response.json()["outputs"][0]["data"]
+        if not isinstance(data, list):
+            raise TypeError(f"Unexpected Androcles output type: {type(data).__name__}")
+        return _coerce_probability_vector(data)
 
     try:
         if timeout_seconds is not None and timeout_seconds > 0:
