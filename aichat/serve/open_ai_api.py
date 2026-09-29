@@ -101,6 +101,7 @@ from aichat.serve.services.conversation_title import (
     complete_conversation_title_chat,
     last_message_includes_conversation_title,
 )
+from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
 from aichat.serve.services.dynamic_leo.settings import dynamic_leo_settings
 from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
 from aichat.serve.services.dynamic_leo.tool_filter import (
@@ -430,6 +431,7 @@ async def augment_messages(
         if is_premium
         else model_config.conversation_token_limit
     )
+    messages_dict = await remove_unprocessed_data_url_parts(messages_dict)
     messages_dict = await process_messages_for_pdf_limits(messages_dict, token_limit)
 
     for prompt in prompts.prompts:

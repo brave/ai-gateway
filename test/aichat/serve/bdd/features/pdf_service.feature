@@ -58,9 +58,9 @@ Feature: PDF text-extraction service
       | parts_desc                 | expected                        |
       | contain only text parts    | the parts pass through unchanged |
       | contain a non-pdf file     | the parts pass through unchanged |
-      | exceed the size limit      | the pdf part passes through unchanged |
-      | hit a sandbox op error     | the pdf part passes through unchanged |
-      | hit an unexpected error    | the pdf part passes through unchanged |
+      | exceed the size limit      | the pdf part is removed                |
+      | hit a sandbox op error     | the pdf part is removed                |
+      | hit an unexpected error    | the pdf part is removed                |
 
   Scenario: Content parts pipeline re-raises hard sandbox worker failures
     When the sandbox worker dies during content part processing

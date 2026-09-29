@@ -9,7 +9,9 @@
 #     sandbox analysis, page/token truncation and the 20MB size check, yet
 #     litellm's BedrockImageProcessor._parse_base64_image (factory.py:3449)
 #     strips parameters and emits the identical Bedrock document(format=pdf).
-#     -> FIXED by this PR (scenarios below).
+#     -> FIXED (detection) in PR #83; remaining escapes (oversize, op
+#        errors, non-PDF data urls) are removed by the fail-closed gate
+#        (features/data_url_gate.feature).
 #
 # B2. API-key chat endpoint (api_key_chat_api.py) drops list content entirely
 #     (messages carry a pydantic ValidatorIterator that is consumed by
@@ -18,14 +20,15 @@
 #     materialization re-opens file_id smuggling: litellm fetches the
 #     attacker-controlled URL (public SSRF, uncapped body) and converts it to
 #     a native PDF document. No preprocess_messages / PDF limits run here.
-#     -> OPEN (red scenarios kept uncommitted in tmp/red_uncommitted/).
+#     -> FIXED: raw body messages are validated once and materialized
+#        (model_dump strips file_id/format), then gated + PDF-limited.
 #
-# B3. Conversation-title path forwards unprocessed PDFs. open_ai_api.py:169
-#     dispatches to the title model before preprocess/PDF limits; an empty
-#     "brave-conversation-title" text (conversation_title.py:32 `if t:`)
-#     makes augment() return the full history verbatim, PDF file parts
-#     included.
-#     -> OPEN (red scenarios kept uncommitted in tmp/red_uncommitted/).
+# B3. Conversation-title path forwards unprocessed PDFs. REFUTED at endpoint
+#     level: empty-text title parts are rejected with 400 before augment
+#     (conversation_title.py `_title_part_has_no_text`), and a truthy title
+#     part makes augment replace the whole history. Endpoint-level regression
+#     lives in features/data_url_gate.feature ("The title path never
+#     forwards pdf parts").
 #
 # Not directly testable as scenarios (design risks, tracked in review):
 # - pdf.py:147-154,159-164 fail-open: oversize >20MB and SandboxOpError PDFs

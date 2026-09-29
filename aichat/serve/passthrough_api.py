@@ -7,15 +7,19 @@ from openai.types.chat import CompletionCreateParams
 from pydantic import TypeAdapter
 from starlette.requests import Request
 
+from aichat.protocol.open_ai_protocol import MessageUnion
 from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
 from aichat.serve.common_api import require_internal_models_api_key
 from aichat.serve.services.backend import get_backend
+from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
+from aichat.serve.services.pdf import process_messages_for_pdf_limits
 
 logger = logging.getLogger(__name__)
 
 v1_router = APIRouter()
 
 _request_adapter = TypeAdapter(CompletionCreateParams)
+_message_adapter = TypeAdapter(MessageUnion)
 _PASSTHROUGH_EXCLUDE = {"model", "messages", "stream"}
 
 
@@ -53,7 +57,15 @@ async def v1_passthrough(request: Request):
         raise HTTPException(status_code=400, detail="prompt_caching must be a boolean")
 
     model = str(chat_request["model"])
-    messages = list(chat_request["messages"])
+    # Validate the RAW body messages once: outer CompletionCreateParams
+    # validation exhausts the lazy content iterators, so messages taken
+    # from chat_request would re-validate/dump to empty content.
+    messages = [
+        _message_adapter.validate_python(m).model_dump(exclude_none=True)
+        for m in body["messages"]
+    ]
+    messages = await remove_unprocessed_data_url_parts(messages)
+    messages = await process_messages_for_pdf_limits(messages, None)
     stream = bool(chat_request.get("stream"))
     extra_params = {
         key: value
