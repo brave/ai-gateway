@@ -1,5 +1,10 @@
 from pydantic_settings import BaseSettings
 
+from aichat.serve.constants import PRODUCTION
+
+_PRODUCTION_MIN_LOG_LEVEL = "WARNING"
+_VERBOSE_LOG_LEVELS = frozenset({"DEBUG", "INFO"})
+
 
 class ServerSettings(BaseSettings):
     log_level: str = "WARNING"
@@ -27,3 +32,13 @@ class ServerSettings(BaseSettings):
 
 
 server_settings = ServerSettings()
+
+
+def check_log_level() -> None:
+    if server_settings.env != PRODUCTION:
+        return
+    if server_settings.log_level.upper() in _VERBOSE_LOG_LEVELS:
+        raise RuntimeError(
+            f"LOG_LEVEL must be {_PRODUCTION_MIN_LOG_LEVEL} or higher when "
+            f"ENV=production (got {server_settings.log_level!r})"
+        )

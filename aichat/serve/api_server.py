@@ -56,7 +56,7 @@ from aichat.serve.models_api import v1_router as models_router_v1
 from aichat.serve.ohttp import v1_router as ohttp_router_v1
 from aichat.serve.open_ai_api import v1_router as open_ai_router_v1
 from aichat.serve.passthrough_api import v1_router as passthrough_router_v1
-from aichat.serve.server_settings import server_settings
+from aichat.serve.server_settings import check_log_level, server_settings
 from aichat.serve.services.backend import initialize_backends
 from aichat.serve.services.security_settings import check_internal_models_api_key
 from aichat.serve.share_api import v1_router as share_router_v1
@@ -91,6 +91,7 @@ _malloc_trim = get_malloc_trim()
 async def lifespan(app: FastAPI):
     app.state.ready = False
     check_internal_models_api_key()
+    check_log_level()
 
     asyncio.get_event_loop().set_default_executor(
         ThreadPoolExecutor(max_workers=server_settings.litellm_executor_max_workers)
