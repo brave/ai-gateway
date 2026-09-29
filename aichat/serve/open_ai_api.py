@@ -73,7 +73,10 @@ from aichat.serve.mcp_tool_execution import (
     simplify_messages_for_llm,
     simplify_tool_message_for_llm,
 )
-from aichat.serve.message_preprocessing import preprocess_messages
+from aichat.serve.message_preprocessing import (
+    UnsupportedContentError,
+    preprocess_messages,
+)
 from aichat.serve.open_ai_adapter import (
     ChunkEmitter,
     OpenAIToolCallBufferManager,
@@ -98,6 +101,7 @@ from aichat.serve.services.conversation_title import (
     complete_conversation_title_chat,
     last_message_includes_conversation_title,
 )
+from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
 from aichat.serve.services.dynamic_leo.settings import dynamic_leo_settings
 from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
 from aichat.serve.services.dynamic_leo.tool_filter import (
@@ -218,7 +222,10 @@ async def v1_chat_completions(
     model_config = get_model_config(request.model)
     is_premium = common["is_premium_host"] and common["has_valid_premium_credential"]
 
-    request.messages = preprocess_messages(request.messages, model_config)
+    try:
+        request.messages = preprocess_messages(request.messages, model_config)
+    except UnsupportedContentError as e:
+        return create_error_response(ErrorCode.BAD_REQUEST_ERROR, str(e), api_version=2)
 
     if not model_config.tool_support and request.tools:
         request.tools = None
@@ -424,6 +431,7 @@ async def augment_messages(
         if is_premium
         else model_config.conversation_token_limit
     )
+    messages_dict = await remove_unprocessed_data_url_parts(messages_dict)
     messages_dict = await process_messages_for_pdf_limits(messages_dict, token_limit)
 
     for prompt in prompts.prompts:

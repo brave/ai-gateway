@@ -70,5 +70,6 @@ docker run $RUN_MODE_FLAGS --rm \
   -e DYNAMIC_LEO_LAST_N_USER_TURNS="5" \
   -e DYNAMIC_LEO_EMBEDDING_SIMILARITY_THRESHOLD="0.72" \
   -e DYNAMIC_LEO_EMBEDDING_MODEL="$DYNAMIC_LEO_EMBEDDING_MODEL" \
+  -e DYNAMIC_LEO_BATCH_INFERENCE="${DYNAMIC_LEO_BATCH_INFERENCE:-false}" \
   -e INTERNAL_BASE_URL="http://host.docker.internal:8000" \
   ai-gateway uvicorn aichat.serve.api_server:app --host 0.0.0.0 --port 8000

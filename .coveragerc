@@ -1,8 +1,12 @@
 # .coveragerc to control coverage.py
 [run]
+source =
+        aichat
+
+[report]
+# Only the aichat package counts toward the gate. (coverage resolves
+# `source` differently across python versions; on some it also swallows
+# test/aichat/*, which would inflate the numbers.)
 include =
-        */conversation/*.py
-omit =
-        */conversation/*_test.py
-        */conversation/__init__.py
-        */conversation/prompt.py
+        aichat/*
+precision = 1

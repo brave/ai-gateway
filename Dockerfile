@@ -31,6 +31,7 @@ FROM builder AS test-builder
 RUN poetry install --no-root --with test
 
 COPY LICENSE README.md ./
+COPY .coveragerc ./
 COPY test /app/test
 COPY aichat /app/aichat
 RUN poetry install --only-root

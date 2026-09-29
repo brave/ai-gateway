@@ -32,11 +32,9 @@ async def _request_auth_verdict(
         return None
     body_bytes = await raw_request.body()
     body_sha256_b64 = base64.b64encode(sha256(body_bytes).digest()).decode("utf-8")
-    metadata = None
+    model = None
     try:
-        body = json.loads(body_bytes)
-        # Relay non-message fields only; never forward conversation content.
-        metadata = {k: v for k, v in body.items() if k != "messages"}
+        model = json.loads(body_bytes).get("model")
     except (ValueError, AttributeError, TypeError):
         pass
     return await internal_client.auth_verify(
@@ -46,7 +44,7 @@ async def _request_auth_verdict(
         body_sha256_b64=body_sha256_b64,
         x_forwarded_host=x_forwarded_host,
         x_brave_key=x_brave_key,
-        metadata=metadata,
+        model=model if isinstance(model, str) else None,
     )
 
 
@@ -125,8 +123,6 @@ async def check_brave_services_key_v2(
     raw_request.state.model_override_premium_fallback = verdict.get(
         "premium_fallback_model"
     )
-    # Default True when older aichat-internal omits the field.
-    raw_request.state.request_allowed = bool(verdict.get("request_allowed", True))
     return bool(verdict.get("service_key_allowed", False))
 
 

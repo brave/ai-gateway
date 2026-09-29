@@ -13,8 +13,10 @@ from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
 from aichat.serve.common_api import extract_bearer_token
 from aichat.serve.open_ai_api import detect_media_content, get_last_user_message_content
 from aichat.serve.services.backend import get_backend
+from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
 from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
 from aichat.serve.services.model_selection import select_model_for_request
+from aichat.serve.services.pdf import process_messages_for_pdf_limits
 from aichat.serve.utils import get_real_ip
 
 logger = logging.getLogger(__name__)
@@ -76,7 +78,16 @@ async def handle_chat_completions(request: Request):
 
     try:
         model = str(chat_request["model"])
-        messages = list(chat_request["messages"])
+        # Validate the RAW body messages once: outer CompletionCreateParams
+        # validation exhausts the lazy content iterators, so messages taken
+        # from chat_request re-validate/dump to empty content. Raw dicts
+        # validate cleanly and model_dump strips extra keys (file_id/format).
+        protocol_messages = [
+            _message_adapter.validate_python(message) for message in body["messages"]
+        ]
+        messages = [m.model_dump(exclude_none=True) for m in protocol_messages]
+        messages = await remove_unprocessed_data_url_parts(messages)
+        messages = await process_messages_for_pdf_limits(messages, None)
         stream = bool(chat_request.get("stream"))
         extra_params = {
             key: value
@@ -84,10 +95,6 @@ async def handle_chat_completions(request: Request):
             if key not in _PASSTHROUGH_EXCLUDE and value is not None
         }
         tools = list(extra_params.pop("tools", None) or [])
-
-        protocol_messages = [
-            _message_adapter.validate_python(message) for message in messages
-        ]
         dynamic_leo_prefetch = await run_dynamic_leo(protocol_messages)
         model = await select_model_for_request(
             model=model,

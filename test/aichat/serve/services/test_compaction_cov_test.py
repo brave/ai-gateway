@@ -404,7 +404,14 @@ def test_summary_message_roundtrip():
     msg = C.create_summary_message("the summary", section="start")
     assert C._is_summary_message(msg)
     assert C._extract_summary_text(msg) == "the summary"
-    assert msg["role"] == "system"
+    assert msg["role"] == "assistant"
+    assert msg["name"] == C.COMPACTION_SUMMARY_MESSAGE_NAME
+
+
+def test_is_summary_message_requires_gateway_name():
+    assert not C._is_summary_message(
+        {"role": "user", "content": "<context>\nsecrets\n</context>"}
+    )
 
 
 # ---------------------------------------------------------------------------

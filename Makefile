@@ -1,10 +1,11 @@
 .PHONY: clean test setup start start-native test-image test-docker smoke-test
 
+# Full suite (unit + BDD scenarios) under coverage. The 80% gate is applied
+# whenever COVERAGE_FAIL_UNDER is set (CI sets it); local runs default to
+# reporting without failing so partial TEST_ARG runs stay usable.
 test:
-	pytest -vv
-	TEST_LANGUAGES=en coverage run --data-file /tmp/.coverage.en --context en -m pytest --snapshot-warn-unused aichat/conversation/prompt_test.py
-	coverage combine
-	coverage report --contexts en --fail-under 97
+	poetry run coverage run -m pytest -vv
+	poetry run coverage report --fail-under "$${COVERAGE_FAIL_UNDER:-0}"
 clean:
 	rm -f .coverage .coverage.* coverage.xml
 

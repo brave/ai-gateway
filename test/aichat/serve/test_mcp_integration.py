@@ -23,6 +23,13 @@ from aichat.serve.services.mcp.registry import (
 from aichat.serve.services.models import ModelConfig
 
 
+def _mock_mcp_executor():
+    mock_executor = Mock()
+    mock_executor.is_mcp_tool = AsyncMock(return_value=False)
+    mock_executor.ensure_tool_catalog_loaded = AsyncMock()
+    return mock_executor
+
+
 class TestHandler(MCPServerHandler):
     """Test handler with tool guidance."""
 
@@ -49,9 +56,11 @@ def reset_registry():
     reset_global_registry()
     # Reset the _initialized flag so handlers can be re-registered
     mcp_integration_module._initialized = False
+    mcp_integration_module.set_shared_mcp_client(None)
     yield
     reset_global_registry()
     mcp_integration_module._initialized = False
+    mcp_integration_module.set_shared_mcp_client(None)
 
 
 @pytest_asyncio.fixture
@@ -126,8 +135,7 @@ async def test_initialize_mcp_for_request():
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.post = AsyncMock(side_effect=mock_post)
 
-    mock_executor = Mock()
-    mock_executor.is_mcp_tool = AsyncMock(return_value=False)
+    mock_executor = _mock_mcp_executor()
 
     with (
         patch("aichat.serve.services.mcp.client.mcp_settings") as mock_mcp_settings,
@@ -167,8 +175,7 @@ async def test_initialize_mcp_for_request_error(caplog):
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.post = AsyncMock(side_effect=httpx.HTTPError("Connection failed"))
 
-    mock_executor = Mock()
-    mock_executor.is_mcp_tool = AsyncMock(return_value=False)
+    mock_executor = _mock_mcp_executor()
 
     with (
         patch("aichat.serve.services.mcp.client.mcp_settings") as mock_mcp_settings,
@@ -588,7 +595,7 @@ async def test_merge_tools_all_filters():
 @pytest.mark.asyncio
 async def test_initialize_mcp_for_request_with_model_config():
     """deep_research tool is included when model_config.deep_research_support is True."""
-    mock_executor = Mock()
+    mock_executor = _mock_mcp_executor()
 
     model_cfg = ModelConfig(
         model_id="test",
@@ -641,7 +648,7 @@ async def test_initialize_mcp_for_request_with_model_config():
 @pytest.mark.asyncio
 async def test_initialize_mcp_for_request_no_model_config_skips_deep_research():
     """deep_research tool is not included when no model_config is passed."""
-    mock_executor = Mock()
+    mock_executor = _mock_mcp_executor()
 
     with (
         patch("aichat.serve.services.mcp.client.mcp_settings") as mock_mcp_settings,
@@ -712,7 +719,7 @@ async def test_initialize_mcp_for_request_filters_by_matched_categories():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
     mock_client.post = AsyncMock(side_effect=mock_post)
-    mock_executor = Mock()
+    mock_executor = _mock_mcp_executor()
 
     with (
         patch("aichat.serve.services.mcp.client.mcp_settings") as mock_mcp_settings,
@@ -722,7 +729,6 @@ async def test_initialize_mcp_for_request_filters_by_matched_categories():
             "aichat.serve.mcp_integration.MCPToolExecutor",
             return_value=mock_executor,
         ),
-        patch("aichat.serve.mcp_integration.get_shared_mcp_client", return_value=None),
     ):
         mock_mcp_settings.mcp_servers = [
             {
@@ -751,6 +757,8 @@ async def test_initialize_mcp_for_request_filters_by_matched_categories():
             "brave_web_search",
             "brave_faqs_search",
         ]
+        # Catalog fetch (initialize + tools/list) runs once; Dynamic Leo filters per request.
+        assert mock_client.post.await_count == 2
 
 
 @pytest.mark.asyncio

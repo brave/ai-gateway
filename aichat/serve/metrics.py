@@ -15,7 +15,7 @@ from aichat.serve.api_version import api_version_from_path
 
 PDF_FILE_PART_ENCOUNTERED = Counter(
     name="pdf_file_part_encountered_total",
-    documentation="Total number of PDF file parts encountered, before any pypdf processing",
+    documentation="Total number of PDF file parts encountered, before sandbox processing",
     registry=REGISTRY,
 )
 
@@ -23,6 +23,12 @@ MEDIA_REQUEST_RETRY_TOTAL = Counter(
     name="media_request_retry_total",
     documentation="Total number of ai-gateway-media-processor requests retried after a ConnectError, by path and outcome",
     labelnames=("path", "outcome"),
+    registry=REGISTRY,
+)
+
+DATA_URL_PART_REMOVED = Counter(
+    name="data_url_part_removed_total",
+    documentation="Total number of content parts removed because their data URL was not passed to the media processor (fail-closed gate)",
     registry=REGISTRY,
 )
 

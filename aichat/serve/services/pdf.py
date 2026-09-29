@@ -1,5 +1,6 @@
 import base64
 import logging
+import re
 
 from aichat.llm.llm_settings import llm_settings
 from aichat.serve.external_service_settings import external_service_settings
@@ -8,7 +9,7 @@ from aichat.serve.media_client import (
     SandboxWorkerError,
     call_pdf_analyze,
 )
-from aichat.serve.metrics import PDF_FILE_PART_ENCOUNTERED
+from aichat.serve.metrics import DATA_URL_PART_REMOVED, PDF_FILE_PART_ENCOUNTERED
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,13 @@ MAX_ALLOWED_PAGES = 85
 TOKEN_BUDGET_RATIO = 0.75
 DEFAULT_TOKEN_LIMIT = 128_000
 
+# Matches every data URL that litellm (BedrockImageProcessor) would convert
+# into a Bedrock PDF document: media type "application/pdf" (case-sensitive,
+# like litellm's own check), optional MIME parameters before (or after) the
+# ";base64" token, then the comma-delimited payload.
+_PDF_DATA_URL_RE = re.compile(r"^data:application/pdf(?:;[^;,]+)*;base64,")
+
+# Canonical form used when re-encoding PDFs we truncated ourselves.
 PDF_DATA_URL_PREFIX = "data:application/pdf;base64,"
 
 TRUNCATION_NOTICE = (
@@ -28,12 +36,19 @@ TRUNCATION_NOTICE = (
 
 
 def _is_pdf_file_data(file_data: str) -> bool:
-    return file_data.startswith(PDF_DATA_URL_PREFIX)
+    # SECURITY: must accept every URL litellm treats as a PDF document.
+    # An exact prefix match previously let parameterized URLs
+    # ("data:application/pdf;name=a.pdf;base64,...") skip sandbox analysis,
+    # page/token truncation and the size check while still being forwarded
+    # to Bedrock as document(format=pdf).
+    # See test/aichat/serve/bdd/features/pdf_security.feature.
+    return _PDF_DATA_URL_RE.match(file_data) is not None
 
 
 def _decode_pdf_bytes(file_data: str) -> bytes:
-    b64_data = file_data[len(PDF_DATA_URL_PREFIX) :]
-    return base64.b64decode(b64_data)
+    # The base64 payload starts after the first comma (base64 itself never
+    # contains commas, and any parameters precede the payload).
+    return base64.b64decode(file_data.partition(",")[2])
 
 
 def _encode_pdf_to_data_url(pdf_bytes: bytes) -> str:
@@ -145,30 +160,33 @@ async def process_pdf_text_content_parts(
             pdf_size_mb = len(pdf_bytes) / (1024 * 1024)
 
             if len(pdf_bytes) > max_size_bytes:
+                # Fail-closed: an unprocessed PDF must not reach the provider.
                 logger.warning(
                     f"PDF file size ({pdf_size_mb:.1f} MB) exceeds "
                     f"max allowed size ({external_service_settings.max_pdf_file_size_mb} MB), "
-                    f"skipping PDF processing"
+                    f"removing PDF part"
                 )
-                result.append(part)
+                DATA_URL_PART_REMOVED.inc()
                 continue
 
             analysis = await _analyze_pdf(pdf_bytes, max_extraction_tokens)
             process_pdf_text_content_parts_sync(analysis, file_info, part, result)
 
         except SandboxOpError:
+            # Fail-closed: malformed input must not reach the provider raw.
             logger.exception(
-                "Sandboxed PDF parsing failed (malformed input?), "
-                "passing through as-is"
+                "Sandboxed PDF parsing failed (malformed input?), removing PDF part"
             )
-            result.append(part)
+            DATA_URL_PART_REMOVED.inc()
         except SandboxWorkerError:
             raise
         except Exception:
+            # Fail-closed: unexpected processing failure must not reach the
+            # provider raw.
             logger.exception(
-                "Failed to process PDF for page splitting, passing through as-is"
+                "Failed to process PDF for page splitting, removing PDF part"
             )
-            result.append(part)
+            DATA_URL_PART_REMOVED.inc()
 
     return result
 
