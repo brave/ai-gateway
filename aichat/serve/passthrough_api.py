@@ -8,6 +8,7 @@ from pydantic import TypeAdapter
 from starlette.requests import Request
 
 from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
+from aichat.serve.common_api import require_internal_models_api_key
 from aichat.serve.services.backend import get_backend
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,10 @@ async def v1_passthrough(request: Request):
     and streams the raw OpenAI-compatible chunks back to the caller.
     Supports both streaming and non-streaming responses.
     """
+    if auth_err := require_internal_models_api_key(
+        request.headers.get("Authorization")
+    ):
+        return auth_err
     try:
         body = await request.json()
         chat_request = _request_adapter.validate_python(body)
