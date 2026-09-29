@@ -16,6 +16,10 @@ from aichat.serve.services.models import ModelConfig
 logger = logging.getLogger(__name__)
 
 
+class UnsupportedContentError(ValueError):
+    pass
+
+
 def _get_image_limit(model_config: ModelConfig) -> int | None:
     """Return the maximum image count for the given model, or None if there is no limit."""
     if model_config.backend in ("bedrock", "bedrock_mantle"):
@@ -269,8 +273,8 @@ def _strip_file_parts(
     messages: list[MessageUnion], model_config: ModelConfig
 ) -> list[MessageUnion]:
     """
-    Replace all FileContentPart and FileUrlContentPart entries with a text
-    note for models that do not support file attachments.
+    Replace all FileContentPart entries with a text note for models that do
+    not support file attachments. FileUrlContentPart entries are rejected.
 
     Replacing rather than silently dropping gives the model enough context to
     inform the user that their file could not be processed.
@@ -283,7 +287,11 @@ def _strip_file_parts(
             continue
         new_content = []
         for part in message.content:
-            if isinstance(part, (FileContentPart, FileUrlContentPart)):
+            if isinstance(part, FileUrlContentPart):
+                raise UnsupportedContentError(
+                    "file_url content parts are not supported for this model"
+                )
+            if isinstance(part, FileContentPart):
                 new_content.append(
                     TextContentPart(
                         type="text",

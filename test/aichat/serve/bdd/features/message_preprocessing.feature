@@ -52,11 +52,11 @@ Feature: Message preprocessing for chat completions
     When the messages are preprocessed
     Then the file parts are replaced with explanatory text notes
 
-  Scenario: File url parts expose a known strip bug
+  Scenario: File url parts are rejected for models without file support
     Given a model without file support
     And a message with a file url part
     When the file url part is preprocessed
-    Then preprocessing fails with the known file url strip bug
+    Then preprocessing rejects the file url part as unsupported content
 
   Scenario: Image parts are replaced by text notes for models without image support
     Given a model without image support
