@@ -26,6 +26,12 @@ MEDIA_REQUEST_RETRY_TOTAL = Counter(
     registry=REGISTRY,
 )
 
+DATA_URL_PART_REMOVED = Counter(
+    name="data_url_part_removed_total",
+    documentation="Total number of content parts removed because their data URL was not passed to the media processor (fail-closed gate)",
+    registry=REGISTRY,
+)
+
 
 def metrics(logger: Logger) -> Callable[[Info], None]:
     TOTAL = Counter(

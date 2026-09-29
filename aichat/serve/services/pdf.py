@@ -9,7 +9,7 @@ from aichat.serve.media_client import (
     SandboxWorkerError,
     call_pdf_analyze,
 )
-from aichat.serve.metrics import PDF_FILE_PART_ENCOUNTERED
+from aichat.serve.metrics import DATA_URL_PART_REMOVED, PDF_FILE_PART_ENCOUNTERED
 
 logger = logging.getLogger(__name__)
 
@@ -160,30 +160,33 @@ async def process_pdf_text_content_parts(
             pdf_size_mb = len(pdf_bytes) / (1024 * 1024)
 
             if len(pdf_bytes) > max_size_bytes:
+                # Fail-closed: an unprocessed PDF must not reach the provider.
                 logger.warning(
                     f"PDF file size ({pdf_size_mb:.1f} MB) exceeds "
                     f"max allowed size ({external_service_settings.max_pdf_file_size_mb} MB), "
-                    f"skipping PDF processing"
+                    f"removing PDF part"
                 )
-                result.append(part)
+                DATA_URL_PART_REMOVED.inc()
                 continue
 
             analysis = await _analyze_pdf(pdf_bytes, max_extraction_tokens)
             process_pdf_text_content_parts_sync(analysis, file_info, part, result)
 
         except SandboxOpError:
+            # Fail-closed: malformed input must not reach the provider raw.
             logger.exception(
-                "Sandboxed PDF parsing failed (malformed input?), "
-                "passing through as-is"
+                "Sandboxed PDF parsing failed (malformed input?), removing PDF part"
             )
-            result.append(part)
+            DATA_URL_PART_REMOVED.inc()
         except SandboxWorkerError:
             raise
         except Exception:
+            # Fail-closed: unexpected processing failure must not reach the
+            # provider raw.
             logger.exception(
-                "Failed to process PDF for page splitting, passing through as-is"
+                "Failed to process PDF for page splitting, removing PDF part"
             )
-            result.append(part)
+            DATA_URL_PART_REMOVED.inc()
 
     return result
 

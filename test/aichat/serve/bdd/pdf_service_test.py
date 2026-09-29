@@ -239,6 +239,8 @@ def processed_result(ctx, expected):
         or expected == "the pdf part passes through unchanged"
     ):
         assert ctx["processed"] == ctx["expected_parts"]
+    elif expected == "the pdf part is removed":
+        assert ctx["processed"] == []
     else:
         raise AssertionError(f"unknown expected: {expected}")
 

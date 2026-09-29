@@ -170,3 +170,8 @@ async def call_pdf_analyze(args: dict[str, Any]) -> dict[str, Any]:
 
 async def call_stt_decode(args: dict[str, Any]) -> dict[str, Any]:
     return await _call("/v1/stt/decode", args)
+
+
+async def call_media_inspect(data_url: str) -> dict[str, Any]:
+    """Sniff a client-supplied data URL; verdict drives the fail-closed gate."""
+    return await _call("/v1/media/inspect", {"data_url": data_url})
