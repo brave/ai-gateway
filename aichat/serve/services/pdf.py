@@ -1,5 +1,6 @@
 import base64
 import logging
+import re
 
 from aichat.llm.llm_settings import llm_settings
 from aichat.serve.external_service_settings import external_service_settings
@@ -17,6 +18,13 @@ MAX_ALLOWED_PAGES = 85
 TOKEN_BUDGET_RATIO = 0.75
 DEFAULT_TOKEN_LIMIT = 128_000
 
+# Matches every data URL that litellm (BedrockImageProcessor) would convert
+# into a Bedrock PDF document: media type "application/pdf" (case-sensitive,
+# like litellm's own check), optional MIME parameters before (or after) the
+# ";base64" token, then the comma-delimited payload.
+_PDF_DATA_URL_RE = re.compile(r"^data:application/pdf(?:;[^;,]+)*;base64,")
+
+# Canonical form used when re-encoding PDFs we truncated ourselves.
 PDF_DATA_URL_PREFIX = "data:application/pdf;base64,"
 
 TRUNCATION_NOTICE = (
@@ -28,12 +36,19 @@ TRUNCATION_NOTICE = (
 
 
 def _is_pdf_file_data(file_data: str) -> bool:
-    return file_data.startswith(PDF_DATA_URL_PREFIX)
+    # SECURITY: must accept every URL litellm treats as a PDF document.
+    # An exact prefix match previously let parameterized URLs
+    # ("data:application/pdf;name=a.pdf;base64,...") skip sandbox analysis,
+    # page/token truncation and the size check while still being forwarded
+    # to Bedrock as document(format=pdf).
+    # See test/aichat/serve/bdd/features/pdf_security.feature.
+    return _PDF_DATA_URL_RE.match(file_data) is not None
 
 
 def _decode_pdf_bytes(file_data: str) -> bytes:
-    b64_data = file_data[len(PDF_DATA_URL_PREFIX) :]
-    return base64.b64decode(b64_data)
+    # The base64 payload starts after the first comma (base64 itself never
+    # contains commas, and any parameters precede the payload).
+    return base64.b64decode(file_data.partition(",")[2])
 
 
 def _encode_pdf_to_data_url(pdf_bytes: bytes) -> str:
