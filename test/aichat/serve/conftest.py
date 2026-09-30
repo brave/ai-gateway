@@ -40,6 +40,7 @@ def _mock_internal_auth(monkeypatch):
             "limit": 3,
         },
         "rate_limit_automatic_mode_check": {"allowed": True, "count": 1},
+        "api_key_verify": {"allowed": True},
     }
     for name, payload in permissive.items():
 

@@ -15,6 +15,21 @@ Feature: aichat-internal HTTP client
     Then aichat-internal received a POST to "/1/sku_verification"
     And the sku verify payload carried the credential and idempotency key
 
+  Scenario: API key verify posts the key to /1/api_key/verify
+    When api key verify is sent with key "sk_test_k1_s1_abcdefgh"
+    Then aichat-internal received a POST to "/1/api_key/verify"
+    And the api key verify payload carried the key
+
+  Scenario: API key verify is retried after a broken response
+    Given aichat-internal breaks the first response
+    When api key verify is sent with key "sk_test_k1_s1_abcdefgh"
+    Then the api key verdict succeeded on the second attempt
+
+  Scenario: API key verify returns nothing when aichat-internal is unavailable
+    Given aichat-internal answers 503
+    When api key verify is sent with key "sk_test_k1_s1_abcdefgh"
+    Then the verdict request returns nothing
+
   Scenario: Rate limit salts are fetched from /1/rate_limit_salts
     When rate limit salts are requested
     Then aichat-internal received a GET to "/1/rate_limit_salts"

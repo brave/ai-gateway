@@ -8,9 +8,11 @@ from pydantic import TypeAdapter
 from starlette.requests import Request
 
 from aichat.protocol.open_ai_protocol import MessageUnion
+from aichat.serve import internal_client
 from aichat.serve.api_key_chat_settings import api_key_chat_settings
 from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
 from aichat.serve.common_api import extract_bearer_token
+from aichat.serve.internal_settings import internal_settings
 from aichat.serve.open_ai_api import detect_media_content, get_last_user_message_content
 from aichat.serve.services.backend import get_backend
 from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
@@ -48,6 +50,17 @@ def api_key_from_authorization(authorization: str | None) -> str | None:
     if token is None or not is_valid_api_key(token):
         return None
     return token
+
+
+async def authorize_api_key(request: Request, api_key: str) -> JSONResponse | None:
+    if not internal_settings.internal_api_enabled:
+        return None
+    verdict = await internal_client.api_key_verify(request.state.httpx_client, api_key)
+    if verdict is None:
+        return openai_error_response(503, "Service unavailable.", "service_unavailable")
+    if not verdict.get("allowed", False):
+        return openai_error_response(401, "Invalid API key.", "invalid_api_key")
+    return None
 
 
 async def _stream_chunks(response: AsyncIterator) -> AsyncIterator[str]:

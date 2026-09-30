@@ -188,10 +188,9 @@ async def api_key_dispatch(request, call_next):
             request.headers.get("authorization")
         )
         if api_key is not None:
-            if not api_key_chat_api.is_valid_api_key(api_key):
-                return api_key_chat_api.openai_error_response(
-                    401, "Invalid API key.", "invalid_api_key"
-                )
+            error = await api_key_chat_api.authorize_api_key(request, api_key)
+            if error is not None:
+                return error
             return await api_key_chat_api.handle_chat_completions(request)
     return await call_next(request)
 
