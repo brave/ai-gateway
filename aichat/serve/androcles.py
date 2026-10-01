@@ -32,6 +32,18 @@ def _coerce_probability_vector(values: list) -> list[float]:
     return [_coerce_probability(value) for value in values]
 
 
+def _androcles_probabilities_output(outputs: list) -> dict:
+    if not outputs:
+        raise ValueError("No outputs in Androcles response")
+    out = next((o for o in outputs if o.get("name") == "probabilities"), None)
+    if out is None:
+        out = outputs[0]
+    data = out.get("data")
+    if data is None:
+        raise ValueError("Androcles probabilities output has no data")
+    return out
+
+
 def _androcles_batch_probs_rows(probs_list: list, batch_size: int) -> list[list[float]]:
     """Normalize Triton output to one probability vector per batch row."""
     if not isinstance(probs_list, list) or not probs_list:
@@ -97,7 +109,7 @@ async def androcles_inference(
 
     async def _call() -> list[float]:
         response = await router.allm_passthrough_route(**request_data)
-        data = response.json()["outputs"][0]["data"]
+        data = _androcles_probabilities_output(response.json()["outputs"])["data"]
         if not isinstance(data, list):
             raise TypeError(f"Unexpected Androcles output type: {type(data).__name__}")
         return _coerce_probability_vector(data)
@@ -152,10 +164,7 @@ async def androcles_inference_batch(
 
     async def _call() -> list:
         response = await router.allm_passthrough_route(**request_data)
-        outputs = response.json()["outputs"]
-        if not outputs:
-            raise ValueError("No outputs in Androcles batch response")
-        probs_list = outputs[0]["data"]
+        probs_list = _androcles_probabilities_output(response.json()["outputs"])["data"]
         return _androcles_batch_probs_rows(probs_list, len(cleaned))
 
     try:
