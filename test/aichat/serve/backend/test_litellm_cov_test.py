@@ -35,6 +35,18 @@ def test_apply_claude_none_upstream_returns_early():
     assert params == {"temperature": 1}
 
 
+def test_apply_bedrock_gpt6_luna_pops_all_sampling():
+    params = {"temperature": 0.7, "top_p": 0.9, "top_k": 40}
+    M.apply_claude_upstream_sampling_params("us.openai.gpt-6-luna", params)
+    assert params == {}
+
+
+def test_apply_bedrock_grok_pops_all_sampling():
+    params = {"temperature": 0.7, "top_p": 0.9, "top_k": 40}
+    M.apply_claude_upstream_sampling_params("us.xai.grok-4-7", params)
+    assert params == {}
+
+
 # --- bedrock_mantle_openai_responses_routing --------------------------------
 
 

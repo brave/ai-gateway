@@ -54,6 +54,29 @@ async def test_androcles_inference_returns_none_on_timeout():
 
 
 @pytest.mark.asyncio
+async def test_androcles_inference_batch_uses_probabilities_output_by_name():
+    async def passthrough(**kwargs):
+        resp = MagicMock()
+        resp.json = MagicMock(
+            return_value={
+                "outputs": [
+                    {"name": "predicted_label", "data": ["Multilingualism", "Coding"]},
+                    {"name": "probabilities", "data": [[0.1, 0.2], [0.3, 0.4]]},
+                ]
+            }
+        )
+        return resp
+
+    with patch(
+        "aichat.serve.androcles.get_global_router",
+        return_value=AsyncMock(allm_passthrough_route=passthrough),
+    ):
+        rows = await androcles_inference_batch(["a", "b"])
+
+    assert rows == [[0.1, 0.2], [0.3, 0.4]]
+
+
+@pytest.mark.asyncio
 async def test_androcles_inference_batch_sends_single_request_and_splits_rows():
     captured = {}
 
