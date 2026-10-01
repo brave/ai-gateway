@@ -10,6 +10,7 @@ from aichat.prompts.leo_system import (
     DEEP_RESEARCH_DIRECTIVE,
     DISABLE_MATH_ML,
     QWEN_SEARCH_DIRECTIVE,
+    WORKSPACES_DIRECTIVE,
     _format_date_multi_city,
     _format_training_cutoff,
     clear_format_date_multi_city_cache,
@@ -36,6 +37,7 @@ def _expected_content(
     content_agent_scope="",
     content_agent_directive="",
     deep_research_directive="",
+    workspaces_directive="",
 ):
     if training_cutoff_raw:
         line = (
@@ -55,6 +57,7 @@ def _expected_content(
         .replace("{{content_agent_scope}}", content_agent_scope)
         .replace("{{content_agent_directive}}", content_agent_directive)
         .replace("{{deep_research_directive}}", deep_research_directive)
+        .replace("{{workspaces_directive}}", workspaces_directive)
     )
 
 
@@ -293,3 +296,21 @@ def test_leo_system_without_deep_research_omits_directive():
     content = actual_messages[0]["content"]
     assert "Deep research" not in content
     assert "{{deep_research_directive}}" not in content
+
+
+def test_leo_system_workspaces_capability_includes_directive():
+    messages = []
+    actual_messages = leo_system.augment(
+        messages,
+        now=TEST_DATETIME,
+        brave_capability=Capability.workspaces,
+    )
+    assert WORKSPACES_DIRECTIVE.strip() in actual_messages[0]["content"]
+
+
+def test_leo_system_without_workspaces_omits_directive():
+    messages = []
+    actual_messages = leo_system.augment(messages, now=TEST_DATETIME)
+    content = actual_messages[0]["content"]
+    assert "Workspace viewers" not in content
+    assert "{{workspaces_directive}}" not in content

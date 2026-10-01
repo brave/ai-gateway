@@ -317,6 +317,9 @@ class Capability(str, Enum):
     # Client can render MathML (brave-core 1.96+). When absent, the system
     # prompt tells the model to avoid MathML and use plain text math instead.
     math_ml = "math_ml"
+    # Client can display workspace file viewers when the model outputs
+    # ::workspace[path/to/file] markdown directives after workspace edits.
+    workspaces = "workspaces"
 
 
 CapabilityOptions = list[str] | str | None
