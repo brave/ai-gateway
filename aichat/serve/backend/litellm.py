@@ -151,12 +151,17 @@ def merge_model_extra_body(params: dict[str, Any], extra_body: dict[str, Any]) -
 def apply_claude_upstream_sampling_params(
     upstream_model: str | None, params: dict[str, Any]
 ) -> None:
-    """Match Claude on Bedrock: Opus/Sonnet reject sampling params entirely; other Claude models keep temperature but reject top_p."""
+    """Drop sampling params that Bedrock rejects for the target upstream model.
+
+    Claude Opus/Sonnet omit temperature, top_p, and top_k; other Claude models omit top_p.
+    Bedrock GPT-6 Luna and xAI Grok omit temperature (and top_p/top_k when present).
+    """
     if not upstream_model:
         return
     u = upstream_model.lower()
-    if "opus" in u or "sonnet" in u:
-        for k in ("temperature", "top_p", "top_k"):
+    no_sampling = ("temperature", "top_p", "top_k")
+    if "opus" in u or "sonnet" in u or "gpt-6-luna" in u or "grok" in u:
+        for k in no_sampling:
             params.pop(k, None)
     elif "claude" in u:
         params.pop("top_p", None)
