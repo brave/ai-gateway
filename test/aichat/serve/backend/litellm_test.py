@@ -346,6 +346,12 @@ class TestLitellmBackend:
         p3 = {"top_p": 1.0}
         apply_claude_upstream_sampling_params("meta-llama", p3)
         assert p3 == {"top_p": 1.0}
+        p4 = {"temperature": 0.7, "top_p": 0.9, "max_tokens": 50}
+        apply_claude_upstream_sampling_params("us.openai.gpt-6-luna", p4)
+        assert p4 == {"max_tokens": 50}
+        p5 = {"temperature": 0.7, "top_p": 0.9, "max_tokens": 50}
+        apply_claude_upstream_sampling_params("us.xai.grok-4-7", p5)
+        assert p5 == {"max_tokens": 50}
 
     def test_set_litellm_model_id_with_inference_profile(self, mock_model_config):
         """Test that backend uses config.model_id, not a computed model_id"""
