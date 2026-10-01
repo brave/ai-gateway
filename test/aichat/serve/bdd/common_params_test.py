@@ -10,6 +10,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from aichat.protocol.open_ai_protocol import Capability, ErrorCode
 from aichat.serve import common_api
+from aichat.serve.rate_limiting import RateLimitVerdict
 from aichat.serve.rate_limiting_settings import rate_limiting_settings
 from aichat.serve.services.model_settings import model_settings
 from aichat.serve.services.security_settings import security_settings
@@ -178,7 +179,7 @@ def given_rate_denied(monkeypatch):
     monkeypatch.setattr(
         common_api,
         "check_rate_limit",
-        AsyncMock(return_value=SimpleNamespace(allowed=False, fallback_model=None)),
+        AsyncMock(return_value=RateLimitVerdict(allowed=False, fallback_model=None)),
     )
 
 
@@ -188,7 +189,7 @@ def given_rate_fallback(model, monkeypatch):
     monkeypatch.setattr(
         common_api,
         "check_rate_limit",
-        AsyncMock(return_value=SimpleNamespace(allowed=True, fallback_model=model)),
+        AsyncMock(return_value=RateLimitVerdict(allowed=True, fallback_model=model)),
     )
 
 
@@ -223,7 +224,7 @@ def given_rate_enabled(monkeypatch):
     monkeypatch.setattr(
         common_api,
         "check_rate_limit",
-        AsyncMock(return_value=SimpleNamespace(allowed=True, fallback_model=None)),
+        AsyncMock(return_value=RateLimitVerdict(allowed=True, fallback_model=None)),
     )
 
 
