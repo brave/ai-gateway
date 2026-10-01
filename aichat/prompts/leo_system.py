@@ -44,6 +44,11 @@ DEEP_RESEARCH_DIRECTIVE = """
 
 """
 
+WORKSPACES_DIRECTIVE = """
+**Workspace viewers:** When you edit a workspace file using workspace tools, you can add a viewer button by outputting `::workspace[path/to/file]` on its own line (with blank lines before and after), where `path/to/file` is the relative path in the workspace. For example, `::workspace[index.html]` adds a viewer for the index.html file.
+
+"""
+
 
 def _ordinal(n: int) -> str:
     if 10 <= n % 100 <= 20:
@@ -202,6 +207,11 @@ class LeoSystem(Prompt):
             else:
                 deep_research_directive = ""
 
+            if has_capability(brave_capability, Capability.workspaces):
+                workspaces_directive = WORKSPACES_DIRECTIVE
+            else:
+                workspaces_directive = ""
+
             training_cutoff_raw = (
                 model_config.get("training_cutoff") if model_config else None
             )
@@ -223,6 +233,7 @@ class LeoSystem(Prompt):
                 .replace("{{content_agent_scope}}", content_agent_scope)
                 .replace("{{content_agent_directive}}", content_agent_directive)
                 .replace("{{deep_research_directive}}", deep_research_directive)
+                .replace("{{workspaces_directive}}", workspaces_directive)
             )
 
             messages = [
