@@ -41,7 +41,10 @@ def _peek_under_limit(peek: dict) -> bool:
 
 
 def create_error_response(
-    code: int, message: str, api_version: int | None = None
+    code: int,
+    message: str,
+    api_version: int | None = None,
+    rate_limit_reset_timestamp: str | None = None,
 ) -> JSONResponse:
     logger.warning(
         "Encountered error: %s on api version %s with code %d",
@@ -52,8 +55,13 @@ def create_error_response(
     return JSONResponse(
         status_code=int(code / 100),
         content=AnthropicErrorResponse(
-            type="error", error=AnthropicErrorMessage(message=message, type=code)
-        ).dict(),
+            type="error",
+            error=AnthropicErrorMessage(
+                message=message,
+                type=code,
+                rate_limit_reset_timestamp=rate_limit_reset_timestamp,
+            ),
+        ).dict(exclude_none=True),
     )
 
 
@@ -219,6 +227,7 @@ async def check_requests_common(
                     ErrorCode.PREMIUM_MODEL_RATE_LIMIT,
                     "You've reached the premium limit for this model. "
                     "Select a different model or try again later.",
+                    rate_limit_reset_timestamp=rate_limit_verdict.limit_reset_timestamp,
                 )
             return create_error_response(
                 ErrorCode.RATE_LIMIT,

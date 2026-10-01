@@ -1,9 +1,12 @@
+import json
 from unittest import mock
 from unittest.mock import AsyncMock
 
 import pytest
 
+from aichat.protocol.open_ai_protocol import ErrorCode
 from aichat.serve.common_api import check_requests_common, resolve_model
+from aichat.serve.rate_limiting import RateLimitVerdict
 
 
 @mock.patch(
@@ -162,6 +165,51 @@ async def test_check_requests_common_automatic_with_content_agent_capability(
     # Must not raise KeyError; automatic model bypasses content_agent check
     result = await check_requests_common(mock_request, common)
     assert result is None
+
+
+@mock.patch("aichat.serve.common_api.check_rate_limit", new_callable=AsyncMock)
+@mock.patch("aichat.serve.common_api.rate_limiting_settings")
+@mock.patch("aichat.serve.common_api.model_settings")
+@pytest.mark.asyncio
+async def test_check_requests_common_premium_model_limit_returns_reset_timestamp(
+    mock_model_settings, mock_rate_limiting_settings, mock_check_rate_limit
+):
+    mock_model_settings.models = {"claude-opus": {"type": "llm", "free": False}}
+    mock_rate_limiting_settings.rate_limiting_enabled = True
+
+    mock_request = mock.Mock()
+    mock_request.state = mock.Mock()
+    mock_request.state.service_key_id = "test-key"
+    mock_request.state.capability = None
+
+    common = {
+        "model": "claude-opus",
+        "x_forwarded_for": "host",
+        "x_forwarded_host": "host",
+        "is_premium_host": True,
+        "is_valid_brave_services_key_v2": True,
+        "has_valid_premium_credential": True,
+        "is_automatic_model_request": False,
+    }
+
+    mock_check_rate_limit.return_value = RateLimitVerdict(
+        allowed=False,
+        limit_kind="premium_model",
+        limit_reset_timestamp="2026-10-02T00:00:00Z",
+    )
+    response = await check_requests_common(mock_request, common)
+    assert response.status_code == 429
+    body = json.loads(response.body)
+    assert int(body["error"]["type"]) == ErrorCode.PREMIUM_MODEL_RATE_LIMIT
+    assert body["error"]["rate_limit_reset_timestamp"] == "2026-10-02T00:00:00Z"
+
+    # Other limit kinds keep the original envelope, with no null key added.
+    mock_check_rate_limit.return_value = RateLimitVerdict(allowed=False)
+    response = await check_requests_common(mock_request, common)
+    assert response.status_code == 429
+    body = json.loads(response.body)
+    assert int(body["error"]["type"]) == ErrorCode.RATE_LIMIT
+    assert "rate_limit_reset_timestamp" not in body["error"]
 
 
 @mock.patch("aichat.serve.common_api.model_settings")
