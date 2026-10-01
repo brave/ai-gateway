@@ -160,12 +160,7 @@ def apply_claude_upstream_sampling_params(
         return
     u = upstream_model.lower()
     no_sampling = ("temperature", "top_p", "top_k")
-    if (
-        "opus" in u
-        or "sonnet" in u
-        or "gpt-6-luna" in u
-        or "grok" in u
-    ):
+    if "opus" in u or "sonnet" in u or "gpt-6-luna" in u or "grok" in u:
         for k in no_sampling:
             params.pop(k, None)
     elif "claude" in u:
