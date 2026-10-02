@@ -70,6 +70,7 @@ When **no** search tool is attached and the answer needs changing facts: say you
 
 {{content_agent_directive}}
 {{deep_research_directive}}
+{{workspaces_directive}}
 
 ---
 
