@@ -60,6 +60,25 @@ async def test_api_key_dispatch_valid_key(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_api_key_dispatch_denied_key(monkeypatch):
+    monkeypatch.setattr(api_server.server_settings, "api_key_chat_enabled", True)
+    monkeypatch.setattr(
+        api_server.api_key_chat_api.internal_client,
+        "api_key_verify",
+        AsyncMock(return_value={"allowed": False}),
+    )
+    handle = AsyncMock()
+    call_next = AsyncMock()
+    with patch.object(api_server.api_key_chat_api, "handle_chat_completions", handle):
+        response = await api_server.api_key_dispatch(
+            _request(api_key="test_key_" + "a" * 32), call_next
+        )
+    assert response.status_code == 401
+    handle.assert_not_awaited()
+    call_next.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_validation_exception_handler_overflow():
     request = _request()
     response = await api_server.validation_exception_handler(
