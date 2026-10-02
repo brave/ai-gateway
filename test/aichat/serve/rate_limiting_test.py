@@ -225,6 +225,51 @@ async def test_check_rate_limit_premium_daily_cap_denied(
     assert result.allowed is False
 
 
+@mock.patch("aichat.serve.internal_client.rate_limit_check", new_callable=AsyncMock)
+@mock.patch("aichat.serve.rate_limiting.model_settings")
+@pytest.mark.asyncio
+async def test_check_rate_limit_premium_model_denial_preserves_expires_at(
+    mock_model_settings, mock_internal, mock_request
+):
+    mock_model_settings.models = {"m": {"free": False}}
+    mock_internal.return_value = {
+        "allowed": False,
+        "count": 21,
+        "limit_kind": "premium_model",
+        "limit_expires_at": "2026-10-02T00:00:00Z",
+    }
+    result = await check_rate_limit(
+        mock_request,
+        "m",
+        True,
+        "1.2.3.4",
+        has_valid_premium_credential=True,
+    )
+    assert result.allowed is False
+    assert result.limit_kind == "premium_model"
+    assert result.limit_expires_at == "2026-10-02T00:00:00Z"
+
+
+@mock.patch("aichat.serve.internal_client.rate_limit_check", new_callable=AsyncMock)
+@mock.patch("aichat.serve.rate_limiting.model_settings")
+@pytest.mark.asyncio
+async def test_check_rate_limit_denial_without_expires_at_is_none(
+    mock_model_settings, mock_internal, mock_request
+):
+    # Older aichat-internal (or any other limit kind) omits the field.
+    mock_model_settings.models = {"m": {"free": False}}
+    mock_internal.return_value = {"allowed": False, "count": 400}
+    result = await check_rate_limit(
+        mock_request,
+        "m",
+        True,
+        "1.2.3.4",
+        has_valid_premium_credential=True,
+    )
+    assert result.allowed is False
+    assert result.limit_expires_at is None
+
+
 @pytest.mark.asyncio
 async def test_check_rate_limit_premium_host_no_credential_still_bypasses(
     mock_request,
