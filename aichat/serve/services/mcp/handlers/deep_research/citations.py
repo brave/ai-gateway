@@ -7,6 +7,8 @@ with inline citation links and source sections.
 import re
 from urllib.parse import urlparse
 
+from aichat.serve.services.mcp.handlers.utils import safe_source_url
+
 
 def encode_url_for_markdown(url: str) -> str:
     """Encode URL for use in markdown links (handle spaces and special chars)."""
@@ -20,6 +22,10 @@ def build_citation_map(citations: list[dict]) -> dict[int, dict]:
         num = c.get("number")
         url = c.get("url", "")
         if num is not None and url:
+            url = safe_source_url(url)
+            if not url:
+                citation_map[num] = {"url": "", "encoded_url": "", "hostname": ""}
+                continue
             try:
                 parsed = urlparse(url)
                 hostname = parsed.hostname or parsed.netloc or url
