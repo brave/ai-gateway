@@ -32,6 +32,19 @@ from aichat.serve.services.bedrock import (
 )
 from aichat.serve.services.bedrock_mantle_auth import get_bedrock_mantle_bearer_token
 from aichat.serve.services.compaction_settings import compaction_settings
+from aichat.serve.services.deployment_pool_settings import deployment_pool_settings
+from aichat.serve.services.deployment_pools import (
+    POOL_IMAGE,
+    POOL_LONG,
+    POOL_SHORT,
+    classify_deployment_pool,
+    get_deployment_pools_config,
+    long_pool_max_input_tokens,
+    pool_router_tag,
+    record_deployment_pool_route,
+    record_short_pool_failover,
+    short_admission_token_budget,
+)
 from aichat.serve.services.model_settings import model_settings
 from aichat.serve.services.models import ModelConfig
 from aichat.serve.utils import count_tokens
@@ -208,12 +221,18 @@ def get_global_router() -> Router:
                         extra_body=extra_body if extra_body else None,
                     )
                     if router_entry:
-                        router_entry["model_name"] = model_id
-                        model_list.append(router_entry)
+                        entries = (
+                            router_entry
+                            if isinstance(router_entry, list)
+                            else [router_entry]
+                        )
+                        for entry in entries:
+                            entry["model_name"] = model_id
+                            model_list.append(entry)
             elif model_type == "llm":
                 router_entry = _build_router_entry(model_id)
                 if router_entry:
-                    model_list.append(router_entry)
+                    _extend_model_list(model_list, router_entry)
 
                 fallback_models = model_config.get("fallback_models", [])
                 if fallback_models:
@@ -250,6 +269,13 @@ def get_global_router() -> Router:
             ]
             logger.info(f"Router configured with fallbacks: {fallbacks_dict}")
 
+        if deployment_pool_settings.deployment_pools_enabled and any(
+            cfg.get("type") == "llm" and cfg.get("deployment_pools")
+            for cfg in model_settings.models.values()
+        ):
+            router_kwargs["enable_pre_call_checks"] = True
+            router_kwargs["enable_tag_filtering"] = True
+
         _global_router = Router(**router_kwargs)
 
         if hasattr(litellm, "in_memory_llm_clients_cache"):
@@ -259,6 +285,71 @@ def get_global_router() -> Router:
         logger.info(f"Global Router initialized with {len(model_list)} model endpoints")
 
     return _global_router
+
+
+def _extend_model_list(model_list: list, router_entry: dict | list[dict]) -> None:
+    if isinstance(router_entry, list):
+        model_list.extend(router_entry)
+    else:
+        model_list.append(router_entry)
+
+
+def _build_deployment_pool_router_entries(
+    model_id: str,
+    model_config: dict,
+    litellm_model: str,
+    litellm_params_base: dict,
+    backend: str | None,
+) -> list[dict] | None:
+    pools = model_config.get("deployment_pools")
+    if not isinstance(pools, dict):
+        return None
+
+    pool_names = [POOL_SHORT, POOL_LONG]
+    image_cfg = pools.get(POOL_IMAGE) or {}
+    if image_cfg.get("enabled") and image_cfg.get("address"):
+        pool_names.append(POOL_IMAGE)
+
+    entries: list[dict] = []
+    for pool_name in pool_names:
+        pool_cfg = pools.get(pool_name) or {}
+        api_base = pool_cfg.get("address")
+        if not api_base:
+            continue
+
+        litellm_params = {
+            **litellm_params_base,
+            "model": litellm_model,
+            "api_base": api_base,
+            "tags": [pool_router_tag(pool_name)],
+        }
+        entry: dict[str, Any] = {
+            "model_name": model_id,
+            "litellm_params": litellm_params,
+        }
+        if backend in ("vllm", "triton") or "hosted_vllm" in litellm_model:
+            if pool_name == POOL_SHORT:
+                max_in = pool_cfg.get("max_input_tokens")
+                if max_in is None:
+                    max_in = short_admission_token_budget(pools)
+            elif pool_name == POOL_LONG:
+                max_in = long_pool_max_input_tokens(pools)
+            else:
+                max_in = pool_cfg.get("max_input_tokens") or pool_cfg.get(
+                    "max_model_tokens"
+                )
+            model_info: dict[str, Any] = {
+                "input_cost_per_token": 0,
+                "output_cost_per_token": 0,
+            }
+            if max_in is not None:
+                model_info["max_input_tokens"] = int(max_in)
+            entry["model_info"] = model_info
+        entries.append(entry)
+
+    if not entries:
+        return None
+    return entries
 
 
 def _build_router_entry(
@@ -308,6 +399,21 @@ def _build_router_entry(
         for field in passthrough_fields:
             if field in model_config:
                 litellm_params[field] = model_config[field]
+
+        if (
+            deployment_pool_settings.deployment_pools_enabled
+            and get_deployment_pools_config(model_id)
+        ):
+            params_base = {k: v for k, v in litellm_params.items() if k != "api_base"}
+            pooled = _build_deployment_pool_router_entries(
+                model_id,
+                model_config,
+                litellm_model,
+                params_base,
+                backend,
+            )
+            if pooled:
+                return pooled
 
         router_entry = {"model_name": model_id, "litellm_params": litellm_params}
 
@@ -368,6 +474,26 @@ def _bedrock_mantle_completion_extras(backend: str | None) -> dict[str, Any]:
     return {}
 
 
+def _set_completion_pool_tags(
+    completion_params: dict[str, Any], tags: list[str]
+) -> None:
+    metadata = dict(completion_params.get("metadata") or {})
+    metadata["tags"] = tags
+    completion_params["metadata"] = metadata
+
+
+def _short_pool_failover_retryable(exc: Exception) -> bool:
+    return isinstance(
+        exc,
+        (
+            litellm.ServiceUnavailableError,
+            litellm.APIConnectionError,
+            litellm.Timeout,
+            litellm.InternalServerError,
+        ),
+    )
+
+
 def get_retry_callback(model_id: str) -> RetryCallback:
     """Return a singleton RetryCallback per model to avoid accumulating
     callback references inside litellm's fire-and-forget tasks."""
@@ -419,6 +545,18 @@ class LitellmBackend(Backend):
         }
         completion_params.update(_bedrock_mantle_completion_extras(self.config.backend))
 
+        pool_route = None
+        routing_active = deployment_pool_settings.deployment_pools_enabled
+        pools = get_deployment_pools_config(self.config.model_id)
+        if pools:
+            max_tokens = int(completion_params.get("max_tokens") or 0)
+            pool_route = classify_deployment_pool(messages, max_tokens, pools)
+            record_deployment_pool_route(
+                self.config.model_id, pool_route, routing_active=routing_active
+            )
+            if routing_active:
+                _set_completion_pool_tags(completion_params, [pool_route.tag])
+
         try:
             async with bedrock_mantle_openai_responses_routing(
                 self.config.upstream_model, self.config.backend
@@ -428,6 +566,28 @@ class LitellmBackend(Backend):
                 )
             return response
         except Exception as e:
+            if (
+                pool_route is not None
+                and routing_active
+                and pool_route.pool == POOL_SHORT
+                and _short_pool_failover_retryable(e)
+            ):
+                record_short_pool_failover(self.config.model_id)
+                _set_completion_pool_tags(
+                    completion_params, [pool_router_tag(POOL_LONG)]
+                )
+                try:
+                    async with bedrock_mantle_openai_responses_routing(
+                        self.config.upstream_model, self.config.backend
+                    ):
+                        return await self.router.acompletion(
+                            **completion_params,
+                            callbacks=[self.retry_callback],
+                        )
+                except Exception as retry_exc:
+                    return handle_litellm_error(
+                        retry_exc, is_streaming=stream, model=self.config.model_id
+                    )
             return handle_litellm_error(
                 e, is_streaming=stream, model=self.config.model_id
             )
