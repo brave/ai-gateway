@@ -81,7 +81,7 @@ class RateLimitVerdict:
     allowed: bool
     fallback_model: str | None = None
     limit_kind: str | None = None
-    limit_reset_timestamp: str | None = None
+    limit_expires_at: str | None = None
 
 
 async def check_rate_limit(
@@ -148,7 +148,7 @@ async def check_rate_limit(
         return RateLimitVerdict(
             allowed=False,
             limit_kind=response.get("limit_kind"),
-            limit_reset_timestamp=response.get("limit_reset_timestamp"),
+            limit_expires_at=response.get("limit_expires_at"),
         )
 
     return RateLimitVerdict(

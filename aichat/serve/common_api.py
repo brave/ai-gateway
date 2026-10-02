@@ -44,7 +44,7 @@ def create_error_response(
     code: int,
     message: str,
     api_version: int | None = None,
-    rate_limit_reset_timestamp: str | None = None,
+    rate_limit_expires_at: str | None = None,
 ) -> JSONResponse:
     logger.warning(
         "Encountered error: %s on api version %s with code %d",
@@ -59,7 +59,7 @@ def create_error_response(
             error=AnthropicErrorMessage(
                 message=message,
                 type=code,
-                rate_limit_reset_timestamp=rate_limit_reset_timestamp,
+                rate_limit_expires_at=rate_limit_expires_at,
             ),
         ).dict(exclude_none=True),
     )
@@ -227,7 +227,7 @@ async def check_requests_common(
                     ErrorCode.PREMIUM_MODEL_RATE_LIMIT,
                     "You've reached the premium limit for this model. "
                     "Select a different model or try again later.",
-                    rate_limit_reset_timestamp=rate_limit_verdict.limit_reset_timestamp,
+                    rate_limit_expires_at=rate_limit_verdict.limit_expires_at,
                 )
             return create_error_response(
                 ErrorCode.RATE_LIMIT,

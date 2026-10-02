@@ -171,7 +171,7 @@ async def test_check_requests_common_automatic_with_content_agent_capability(
 @mock.patch("aichat.serve.common_api.rate_limiting_settings")
 @mock.patch("aichat.serve.common_api.model_settings")
 @pytest.mark.asyncio
-async def test_check_requests_common_premium_model_limit_returns_reset_timestamp(
+async def test_check_requests_common_premium_model_limit_returns_expires_at(
     mock_model_settings, mock_rate_limiting_settings, mock_check_rate_limit
 ):
     mock_model_settings.models = {"claude-opus": {"type": "llm", "free": False}}
@@ -195,13 +195,13 @@ async def test_check_requests_common_premium_model_limit_returns_reset_timestamp
     mock_check_rate_limit.return_value = RateLimitVerdict(
         allowed=False,
         limit_kind="premium_model",
-        limit_reset_timestamp="2026-10-02T00:00:00Z",
+        limit_expires_at="2026-10-02T00:00:00Z",
     )
     response = await check_requests_common(mock_request, common)
     assert response.status_code == 429
     body = json.loads(response.body)
     assert int(body["error"]["type"]) == ErrorCode.PREMIUM_MODEL_RATE_LIMIT
-    assert body["error"]["rate_limit_reset_timestamp"] == "2026-10-02T00:00:00Z"
+    assert body["error"]["rate_limit_expires_at"] == "2026-10-02T00:00:00Z"
 
     # Other limit kinds keep the original envelope, with no null key added.
     mock_check_rate_limit.return_value = RateLimitVerdict(allowed=False)
@@ -209,7 +209,7 @@ async def test_check_requests_common_premium_model_limit_returns_reset_timestamp
     assert response.status_code == 429
     body = json.loads(response.body)
     assert int(body["error"]["type"]) == ErrorCode.RATE_LIMIT
-    assert "rate_limit_reset_timestamp" not in body["error"]
+    assert "rate_limit_expires_at" not in body["error"]
 
 
 @mock.patch("aichat.serve.common_api.model_settings")
