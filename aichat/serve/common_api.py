@@ -45,10 +45,11 @@ def create_error_response(
     message: str,
     api_version: int | None = None,
     rate_limit_expires_at: str | None = None,
+    log_message: str | None = None,
 ) -> JSONResponse:
     logger.warning(
         "Encountered error: %s on api version %s with code %d",
-        message,
+        log_message if log_message is not None else message,
         api_version,
         code,
     )
@@ -227,11 +228,14 @@ async def check_requests_common(
                     ErrorCode.PREMIUM_MODEL_RATE_LIMIT,
                     "You've reached the premium limit for this model. "
                     "Select a different model or try again later.",
+                    api_version=common.get("api_version"),
                     rate_limit_expires_at=rate_limit_verdict.limit_expires_at,
                 )
             return create_error_response(
                 ErrorCode.RATE_LIMIT,
-                f"Exceeded the rate limit for model {model}",
+                "Rate limit exceeded",
+                api_version=common.get("api_version"),
+                log_message=f"Rate limit exceeded for model {model}",
             )
         if rate_limit_verdict.fallback_model:
             model = rate_limit_verdict.fallback_model
