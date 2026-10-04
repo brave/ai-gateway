@@ -135,6 +135,16 @@ TOKEN_TRIMMING_AMOUNT = Histogram(
     buckets=PROMPT_LENGTH_BUCKETS,
 )
 
+DEPLOYMENT_POOL_ROUTE_TOTAL = Counter(
+    name="deployment_pool_route_total",
+    documentation=(
+        "Chat requests classified into a vLLM deployment pool. "
+        "mode=shadow when DEPLOYMENT_POOLS_ENABLED is off; mode=active when routing applies."
+    ),
+    labelnames=("model", "pool", "route_reason", "mode"),
+    registry=REGISTRY,
+)
+
 DEEP_RESEARCH_CAPABILITY_TOTAL = Counter(
     name="deep_research_capability_total",
     documentation="Requests with deep_research capability, tracking whether the tool was triggered",
