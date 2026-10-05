@@ -112,6 +112,7 @@ from aichat.serve.services.model_selection import (
     AndroclesPrefetch,
     select_model_for_request,
 )
+from aichat.serve.services.model_settings import model_settings
 from aichat.serve.services.models import (
     ModelConfig,
     get_model_config,
@@ -166,16 +167,14 @@ async def v1_chat_completions(
 ) -> StreamingResponse | JSONResponse:
     request_start_time = time.time()
     rate_key = get_real_ip(common.get("x_forwarded_for"))
+    is_conversation_title_request = last_message_includes_conversation_title(
+        request.messages
+    )
 
-    if last_message_includes_conversation_title(request.messages):
-        return await complete_conversation_title_chat(
-            request=request,
-            prompts=prompts,
-            process_streaming_response=process_streaming_response,
-        )
-
-    # Classify for model triage and Dynamic Leo MCP tool gating
-    dynamic_leo_prefetch = await run_dynamic_leo(request.messages)
+    if is_conversation_title_request:
+        dynamic_leo_prefetch = None
+    else:
+        dynamic_leo_prefetch = await run_dynamic_leo(request.messages)
 
     is_premium = common["is_premium_host"] and common["has_valid_premium_credential"]
     premium_fallback = getattr(
@@ -186,19 +185,20 @@ async def v1_chat_completions(
     )
     requested_model = server_settings.placeholder_model if override_active else None
 
-    request.model = await select_model_for_request(
-        model=common["model"],
-        messages=request.messages,
-        brave_capability=getattr(request, "brave_capability", None),
-        is_premium=common["is_premium_host"] and common["has_valid_premium_credential"],
-        last_user_message_content=get_last_user_message_content(request.messages),
-        media_type=detect_media_content(request.messages),
-        rate_key=rate_key,
-        httpx_client=getattr(raw_request.state, "httpx_client", None),
-        androcles_prefetch=dynamic_leo_prefetch,
-    )
-
-    common["model"] = request.model
+    if not is_conversation_title_request:
+        request.model = await select_model_for_request(
+            model=common["model"],
+            messages=request.messages,
+            brave_capability=getattr(request, "brave_capability", None),
+            is_premium=common["is_premium_host"]
+            and common["has_valid_premium_credential"],
+            last_user_message_content=get_last_user_message_content(request.messages),
+            media_type=detect_media_content(request.messages),
+            rate_key=rate_key,
+            httpx_client=getattr(raw_request.state, "httpx_client", None),
+            androcles_prefetch=dynamic_leo_prefetch,
+        )
+        common["model"] = request.model
 
     raw_request.state.capability = request.brave_capability
 
@@ -216,6 +216,27 @@ async def v1_chat_completions(
             ErrorCode.EXCEEDED_CONTEXT_LENGTH,
             f"message length must be less than the conversation rounds maximum of {conversation_settings.max_conversation_rounds} - 'messages'",
             api_version=2,
+        )
+
+    if is_conversation_title_request:
+        title_model = model_settings.model_triaging.get("conversation_title")
+        title_model_config = get_model_config(title_model)
+        _, total_tokens, _ = maybe_trim_messages(
+            messages=[m.model_dump() for m in request.messages],
+            model_config=title_model_config,
+            is_premium=is_premium,
+            model=title_model,
+        )
+        if total_tokens > compaction_settings.absolute_max_tokens:
+            return create_error_response(
+                ErrorCode.EXCEEDED_CONTEXT_LENGTH,
+                f"Conversation is too large ({total_tokens} tokens). "
+                f"Please start a new conversation or reduce the amount of attached content.",
+            )
+        return await complete_conversation_title_chat(
+            request=request,
+            prompts=prompts,
+            process_streaming_response=process_streaming_response,
         )
 
     backend = get_backend(request.model)
