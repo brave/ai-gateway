@@ -193,9 +193,9 @@ def make_backend(model, reply=None, stream_chunks=None):
 
 
 def stub_pipeline(monkeypatch, ctx, model_config):
-    monkeypatch.setattr(
-        open_ai_api, "check_requests_common", AsyncMock(return_value=None)
-    )
+    check_requests_common = AsyncMock(return_value=None)
+    monkeypatch.setattr(open_ai_api, "check_requests_common", check_requests_common)
+    ctx["check_requests_common"] = check_requests_common
 
     prompts_stub = SimpleNamespace(prompts=[])
     monkeypatch.setattr(open_ai_api, "prompts", prompts_stub)
