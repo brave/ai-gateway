@@ -68,6 +68,17 @@ async def sku_verify(
     )
 
 
+async def api_key_verify(
+    client: httpx.AsyncClient, api_key: str
+) -> dict[str, Any] | None:
+    return await _post(
+        client,
+        "/1/api_key/verify",
+        {"api_key": api_key},
+        idempotent=True,
+    )
+
+
 async def rate_limit_salts(client: httpx.AsyncClient) -> dict[str, Any] | None:
     return await _get(client, "/1/rate_limit_salts", idempotent=True)
 
