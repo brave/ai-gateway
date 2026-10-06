@@ -1,7 +1,6 @@
 import asyncio
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -132,19 +131,15 @@ def given_title_request(ctx, monkeypatch):
     monkeypatch.setattr(open_ai_api, "complete_conversation_title_chat", complete_title)
     ctx["complete_title"] = complete_title
     ctx["title_response"] = title_response
-    ctx["request"] = SimpleNamespace(
+    ctx["request"] = OpenAIRequest(
         model="test-model",
         messages=[
-            SimpleNamespace(
-                role="user",
-                content=[{"type": "brave-conversation-title", "text": "Title me"}],
+            UserMessage(
+                content=[{"type": "brave-conversation-title", "text": "Title me"}]
             )
         ],
         stream=False,
         tools=None,
-        brave_capability=None,
-        brave_mcp_tools_exclude=None,
-        brave_mcp_tools_include=None,
     )
 
 
@@ -284,6 +279,18 @@ def when_processed(ctx, monkeypatch):
     monkeypatch.setattr(open_ai_api, "select_model_for_request", select_model)
     ctx["select_model"] = select_model
 
+    if ctx.get("complete_title") is not None:
+        monkeypatch.setattr(
+            open_ai_api,
+            "maybe_trim_messages",
+            lambda messages, **kwargs: (messages, 1, 0),
+        )
+        monkeypatch.setattr(
+            open_ai_api.model_settings,
+            "model_triaging",
+            {"conversation_title": model},
+        )
+
     monkeypatch.setattr(security_settings, "alignment_checking_enabled", False)
 
     raw_request = mock_request(model_override=ctx.get("model_override", False))
@@ -419,6 +426,11 @@ def then_stream_header(header, value, ctx):
 def then_title_bypassed(ctx):
     ctx["complete_title"].assert_awaited_once()
     ctx["select_model"].assert_not_awaited()
+
+
+@then("the common request gate ran")
+def then_common_gate_ran(ctx):
+    ctx["check_requests_common"].assert_awaited_once()
 
 
 @then(parsers.parse("a JSON error response with status {status:d} is returned"))

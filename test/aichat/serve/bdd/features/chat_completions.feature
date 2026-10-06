@@ -42,11 +42,12 @@ Feature: Chat completions endpoint
     When the chat completion is processed
     Then the stream headers contain "Brave-NEAR-verified" set to "true"
 
-  Scenario: Conversation title requests bypass the completion pipeline
+  Scenario: Conversation title requests pass the common gate before the title handler
     Given a fake backend for model "test-model" replying "unused"
     And a non-streaming chat request carrying a brave-conversation-title part
     When the chat completion is processed
-    Then the title service answered and model selection never ran
+    Then the common request gate ran
+    And the title service answered and model selection never ran
 
   Scenario: Too many conversation rounds are rejected
     Given the conversation rounds maximum is 1

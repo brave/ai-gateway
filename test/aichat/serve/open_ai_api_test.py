@@ -192,6 +192,98 @@ class TestV1ChatCompletions:
 
         assert result == mock_backend.converse.return_value
 
+    @patch("aichat.serve.open_ai_api.maybe_trim_messages", return_value=([], 1, 0))
+    @patch("aichat.serve.open_ai_api.get_model_config")
+    @patch("aichat.serve.open_ai_api.model_settings")
+    @patch("aichat.serve.open_ai_api.complete_conversation_title_chat")
+    @patch("aichat.serve.open_ai_api.check_requests_common")
+    @pytest.mark.asyncio
+    async def test_v1_chat_completions_conversation_title_runs_common_gate(
+        self,
+        mock_check_requests,
+        mock_complete_title,
+        mock_model_settings,
+        mock_get_model_config,
+        _mock_trim,
+        mock_request,
+        mock_background_tasks,
+        mock_fastapi_response,
+        mock_common_params,
+    ):
+        mock_check_requests.return_value = None
+        mock_complete_title.return_value = {"ok": True}
+        mock_model_settings.model_triaging = {"conversation_title": "title-model"}
+        mock_get_model_config.return_value = MagicMock()
+
+        title_request = OpenAIRequest(
+            model="automatic",
+            messages=[
+                UserMessage(
+                    content=[{"type": "brave-conversation-title", "text": "My chat"}]
+                )
+            ],
+            stream=False,
+        )
+
+        with patch(
+            "aichat.serve.open_ai_api.select_model_for_request",
+            new_callable=AsyncMock,
+        ) as mock_select:
+            result = await v1_chat_completions(
+                raw_request=mock_request,
+                request=title_request,
+                background_tasks=mock_background_tasks,
+                fastapi_response=mock_fastapi_response,
+                common=mock_common_params,
+            )
+
+        mock_check_requests.assert_awaited_once_with(mock_request, mock_common_params)
+        mock_select.assert_not_awaited()
+        mock_complete_title.assert_awaited_once()
+        assert result == {"ok": True}
+
+    @patch("aichat.serve.open_ai_api.complete_conversation_title_chat")
+    @patch("aichat.serve.open_ai_api.check_requests_common")
+    @pytest.mark.asyncio
+    async def test_v1_chat_completions_conversation_title_blocked_by_common_gate(
+        self,
+        mock_check_requests,
+        mock_complete_title,
+        mock_request,
+        mock_background_tasks,
+        mock_fastapi_response,
+        mock_common_params,
+    ):
+        gate_response = MagicMock()
+        mock_check_requests.return_value = gate_response
+
+        title_request = OpenAIRequest(
+            model="automatic",
+            messages=[
+                UserMessage(
+                    content=[{"type": "brave-conversation-title", "text": "My chat"}]
+                )
+            ],
+            stream=False,
+        )
+
+        with patch(
+            "aichat.serve.open_ai_api.select_model_for_request",
+            new_callable=AsyncMock,
+        ) as mock_select:
+            result = await v1_chat_completions(
+                raw_request=mock_request,
+                request=title_request,
+                background_tasks=mock_background_tasks,
+                fastapi_response=mock_fastapi_response,
+                common=mock_common_params,
+            )
+
+        mock_check_requests.assert_awaited_once()
+        mock_select.assert_not_awaited()
+        mock_complete_title.assert_not_awaited()
+        assert result is gate_response
+
     @patch("aichat.serve.open_ai_api.mcp_settings")
     @patch("aichat.serve.open_ai_api.check_requests_common")
     @patch("aichat.serve.open_ai_api.get_backend")

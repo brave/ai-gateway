@@ -346,6 +346,12 @@ class TestLitellmBackend:
         p3 = {"top_p": 1.0}
         apply_claude_upstream_sampling_params("meta-llama", p3)
         assert p3 == {"top_p": 1.0}
+        p4 = {"temperature": 0.7, "top_p": 0.9, "max_tokens": 50}
+        apply_claude_upstream_sampling_params("us.openai.gpt-6-luna", p4)
+        assert p4 == {"max_tokens": 50}
+        p5 = {"temperature": 0.7, "top_p": 0.9, "max_tokens": 50}
+        apply_claude_upstream_sampling_params("us.xai.grok-4-7", p5)
+        assert p5 == {"max_tokens": 50}
 
     def test_set_litellm_model_id_with_inference_profile(self, mock_model_config):
         """Test that backend uses config.model_id, not a computed model_id"""
@@ -1000,6 +1006,44 @@ class TestBuildRouterEntry:
 
         assert result is None
 
+    @patch("aichat.serve.services.deployment_pools.model_settings")
+    @patch("aichat.serve.backend.litellm.deployment_pool_settings")
+    @patch("aichat.serve.backend.litellm.model_settings")
+    def test_build_router_entry_deployment_pools(
+        self, mock_litellm_settings, mock_pool_settings_obj, mock_pool_settings
+    ):
+        mock_pool_settings_obj.deployment_pools_enabled = True
+        mock_litellm_settings.models = mock_pool_settings.models = {
+            "qwen-14b-instruct": {
+                "backend": "litellm",
+                "upstream_model": "Qwen/Qwen3-14B",
+                "address": "http://long/v1",
+                "deployment_pools": {
+                    "short_text": {
+                        "address": "http://short/v1",
+                        "max_model_tokens": 20480,
+                    },
+                    "long_text": {
+                        "address": "http://long/v1",
+                        "max_model_tokens": 81920,
+                    },
+                    "image": {"address": None, "enabled": False},
+                },
+            }
+        }
+        result = _build_router_entry("qwen-14b-instruct")
+
+        assert isinstance(result, list)
+        assert len(result) == 2
+        bases = {e["litellm_params"]["api_base"] for e in result}
+        assert bases == {"http://short/v1", "http://long/v1"}
+        tags = {e["litellm_params"]["tags"][0] for e in result}
+        assert tags == {"pool:short", "pool:long"}
+        short_entry = next(
+            e for e in result if e["litellm_params"]["api_base"] == "http://short/v1"
+        )
+        assert short_entry["model_info"]["max_input_tokens"] == 20480 - 512
+
 
 class TestGetGlobalRouter:
     """Test cases for get_global_router fallback construction"""
@@ -1062,3 +1106,34 @@ class TestGetGlobalRouter:
             "claude-opus": ["claude-3-sonnet", "claude-3-haiku"],
             "qwen-3-235b": ["qwen-3-235b-bedrock"],
         }
+
+    @patch("aichat.serve.backend.litellm._global_router", None)
+    @patch("aichat.serve.backend.litellm.Router")
+    @patch("aichat.serve.backend.litellm.deployment_pool_settings")
+    @patch("aichat.serve.backend.litellm.model_settings")
+    def test_router_enables_pool_routing_flags(
+        self, mock_settings, mock_pool_settings, mock_router
+    ):
+        mock_pool_settings.deployment_pools_enabled = True
+        mock_settings.models = {
+            "qwen-14b-instruct": {
+                "backend": "litellm",
+                "type": "llm",
+                "upstream_model": "Qwen/Qwen3-14B",
+                "address": "http://long/v1",
+                "deployment_pools": {
+                    "short_text": {
+                        "address": "http://short/v1",
+                        "max_model_tokens": 20480,
+                    },
+                    "long_text": {
+                        "address": "http://long/v1",
+                        "max_model_tokens": 81920,
+                    },
+                },
+            }
+        }
+        get_global_router()
+        _, kwargs = mock_router.call_args
+        assert kwargs["enable_pre_call_checks"] is True
+        assert kwargs["enable_tag_filtering"] is True

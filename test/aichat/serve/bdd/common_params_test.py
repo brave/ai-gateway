@@ -179,7 +179,7 @@ def given_rate_denied(monkeypatch):
     monkeypatch.setattr(
         common_api,
         "check_rate_limit",
-        AsyncMock(return_value=RateLimitVerdict(allowed=False)),
+        AsyncMock(return_value=RateLimitVerdict(allowed=False, fallback_model=None)),
     )
 
 
@@ -224,7 +224,7 @@ def given_rate_enabled(monkeypatch):
     monkeypatch.setattr(
         common_api,
         "check_rate_limit",
-        AsyncMock(return_value=RateLimitVerdict(allowed=True)),
+        AsyncMock(return_value=RateLimitVerdict(allowed=True, fallback_model=None)),
     )
 
 

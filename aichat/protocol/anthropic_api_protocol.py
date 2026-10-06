@@ -92,6 +92,7 @@ class MessagesResponse(BaseModel):
 class ErrorMessage(BaseModel):
     type: str
     message: str
+    rate_limit_expires_at: str | None = None
 
 
 class ErrorResponse(BaseModel):
