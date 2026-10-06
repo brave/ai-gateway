@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from aichat.serve.services.mcp.client import MCPClient
-from aichat.serve.services.mcp.context import tier_http_headers_for_model
+from aichat.serve.services.mcp.context import mcp_context_headers_for_model
 from aichat.serve.services.mcp.registry import (
     MCPServerRegistry,
     get_global_registry,
@@ -199,7 +199,7 @@ class MCPToolExecutor:
         }
 
         headers = mcp_client._prepare_headers(server_config)
-        headers.update(tier_http_headers_for_model(model))
+        headers.update(mcp_context_headers_for_model(model))
 
         logger.info(
             f"Calling MCP tool {tool_name} at {server_config.url}/mcp with payload: {payload}"
