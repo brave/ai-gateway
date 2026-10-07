@@ -36,6 +36,7 @@ from aichat.serve.services.dynamic_leo.user_text import (
     last_message_and_prior_fused,
 )
 from aichat.serve.services.model_settings import model_settings
+from aichat.serve.user_message_text import extract_last_user_message_text
 
 logger = logging.getLogger(__name__)
 
@@ -181,9 +182,16 @@ async def run_dynamic_leo(messages: list[Message]) -> AndroclesPrefetch | None:
         logger.info("Dynamic Leo categories: %s", merged_reasons)
 
     merged_probs = _merge_probs_for_triage(probs_last, probs_prior)
+    analytics_text = extract_last_user_message_text(messages)
+    # Androcles runs on last_text; analytics POST uses analytics_text (may differ
+    # for multi-part user content). Only passthrough when they match exactly.
+    analytics_probs = (
+        probs_last if analytics_text and analytics_text == last_text else None
+    )
     return AndroclesPrefetch(
         task_type=task_type_from_androcles_probabilities(merged_probs),
         matched_categories=frozenset(merged_reasons.keys()),
+        last_user_androcles_probabilities=analytics_probs,
     )
 
 

@@ -103,3 +103,28 @@ class TestAnalyticsEdgeCases:
         )
         assert analytics_data["text"] == expected
         assert isinstance(analytics_data["text"], str)
+
+    @pytest.mark.asyncio
+    async def test_includes_androcles_probabilities_when_provided(
+        self, mock_httpx_async_client, mock_app_settings
+    ):
+        messages = [{"role": "user", "content": "How are you?"}]
+        probs = [0.1] * 21
+        with (
+            patch(
+                "aichat.serve.analytics.httpx.AsyncClient",
+                return_value=mock_httpx_async_client,
+            ),
+            patch(
+                "aichat.serve.analytics.external_service_settings", mock_app_settings
+            ),
+        ):
+            await send_analytics_request(
+                messages=messages,
+                model="test-model",
+                androcles_probabilities=probs,
+            )
+
+        mock_client = await mock_httpx_async_client.__aenter__()
+        analytics_data = mock_client.post.call_args[1]["json"]
+        assert analytics_data["androcles_probabilities"] == probs
