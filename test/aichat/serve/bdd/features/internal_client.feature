@@ -59,6 +59,16 @@ Feature: aichat-internal HTTP client
     When a rate limit check is sent for model "llama-2-13b-chat"
     Then the rate limit check returns nothing after one attempt
 
+  Scenario: Non-idempotent writes are not retried on protocol errors
+    Given aichat-internal aborts the first response with a protocol error
+    When a rate limit check is sent for model "llama-2-13b-chat"
+    Then the rate limit check returns nothing after one attempt
+
+  Scenario: Idempotent reads are retried after a protocol error
+    Given aichat-internal aborts the first response with a protocol error
+    When rate limit salts are requested
+    Then the salts request succeeded on the second attempt
+
   Scenario: Persistent transport failures give up after two attempts
     Given aichat-internal breaks every response
     When rate limit salts are requested

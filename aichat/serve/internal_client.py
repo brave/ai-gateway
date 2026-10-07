@@ -201,6 +201,9 @@ async def _post(
                 timeout=internal_settings.internal_request_timeout_seconds,
             )
         except httpx.RemoteProtocolError as e:
+            if not idempotent:
+                _report_unavailable(path, type(e).__name__, str(e))
+                return None
             if not _handle_retryable_error(path, e, attempt):
                 return None
             continue
@@ -236,6 +239,9 @@ async def _get(
                 url, timeout=internal_settings.internal_request_timeout_seconds
             )
         except httpx.RemoteProtocolError as e:
+            if not idempotent:
+                _report_unavailable(path, type(e).__name__, str(e))
+                return None
             if not _handle_retryable_error(path, e, attempt):
                 return None
             continue
