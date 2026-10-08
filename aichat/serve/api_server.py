@@ -179,24 +179,16 @@ async def info():
 
 
 @app.middleware("http")
-async def api_key_dispatch(request, call_next):
-    if (
-        server_settings.api_key_chat_enabled
-        and request.url.path == "/v1/chat/completions"
-    ):
-        api_key = api_key_chat_api.api_key_from_authorization(
-            request.headers.get("authorization")
-        )
-        if api_key is not None:
-            error = await api_key_chat_api.authorize_api_key(request, api_key)
-            if error is not None:
-                return error
-            return await api_key_chat_api.handle_chat_completions(request)
+async def api_key_host_gate(request, call_next):
+    error = api_key_chat_api.check_api_key_host(request)
+    if error is not None:
+        return error
     return await call_next(request)
 
 
 app.include_router(conversation_router, prefix="/v1")
 app.include_router(models_router_v1, prefix="/v1")
+app.include_router(api_key_chat_api.v1_router, prefix="/v1")
 app.include_router(open_ai_router_v1, prefix="/v1")
 app.include_router(image_generation_router_v1, prefix="/v1")
 app.include_router(tts_router_v1, prefix="/v1")
