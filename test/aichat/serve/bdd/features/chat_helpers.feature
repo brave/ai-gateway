@@ -141,6 +141,13 @@ Feature: Chat completion helper functions
     Then the streaming research handler ran for "deep_research"
     And the stream still ends with a DONE sentinel
 
+  Scenario: Hallucinated deep research calls are not executed without capability
+    Given a streaming chat request for model "test-model"
+    And deep research execution is monitored without advertising the tool
+    And a completed tool call for "deep_research"
+    When the stream pipeline is consumed
+    Then the streaming research handler did not run
+
   Scenario: Requests without deep research tools record the capability metric
     Given a streaming chat request for model "test-model" with deep research capability
     And deep research tracking is armed
