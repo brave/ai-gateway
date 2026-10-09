@@ -292,6 +292,17 @@ async def v1_chat_completions(
                 bool(await verify_and_get_ohttp_config(request.model))
             ).lower()
 
+        background_tasks.add_task(
+            send_analytics_request,
+            messages=[m.model_dump() for m in request.messages],
+            model=request.model,
+            androcles_probabilities=(
+                dynamic_leo_prefetch.last_user_androcles_probabilities
+                if dynamic_leo_prefetch
+                else None
+            ),
+        )
+
         return StreamingResponse(
             _stream_with_compaction(
                 request=request,
@@ -337,8 +348,13 @@ async def v1_chat_completions(
     # Send analytics request in the background
     background_tasks.add_task(
         send_analytics_request,
-        messages=messages,
+        messages=[m.model_dump() for m in request.messages],
         model=request.model,
+        androcles_probabilities=(
+            dynamic_leo_prefetch.last_user_androcles_probabilities
+            if dynamic_leo_prefetch
+            else None
+        ),
     )
 
     response = await backend.converse(messages, request.stream, params)
