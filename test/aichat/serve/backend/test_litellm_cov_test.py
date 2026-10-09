@@ -23,10 +23,10 @@ def test_apply_claude_sonnet_pops_all_sampling():
     assert params == {}
 
 
-def test_apply_claude_other_pops_top_p_only():
+def test_apply_claude_haiku_pops_all_sampling():
     params = {"temperature": 1, "top_p": 0.9, "top_k": 40}
     M.apply_claude_upstream_sampling_params("claude-3-haiku", params)
-    assert params == {"temperature": 1, "top_k": 40}
+    assert params == {}
 
 
 def test_apply_claude_none_upstream_returns_early():

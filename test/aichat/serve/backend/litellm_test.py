@@ -188,6 +188,22 @@ class TestLitellmBackend:
 
         assert result == mock_response
 
+    @pytest.mark.asyncio
+    async def test_converse_strips_temperature_for_haiku(self, mock_model_config):
+        mock_model_config.upstream_model = "us.anthropic.claude-haiku-4-5-v1:0"
+        backend = LitellmBackend(mock_model_config)
+        mock_response = MagicMock(spec=ChatCompletion)
+        messages = [{"role": "user", "content": "Hello"}]
+        params = {"temperature": 0.3, "max_tokens": 512}
+
+        mock_completion = AsyncMock(return_value=mock_response)
+        backend.router.acompletion = mock_completion
+        await backend.converse(messages, stream=False, params=params)
+
+        call_kwargs = mock_completion.call_args[1]
+        assert "temperature" not in call_kwargs
+        assert call_kwargs["max_tokens"] == 512
+
     def test_build_params_with_tools_non_bedrock(self, mock_model_config, mock_tools):
         """Test building parameters with tools for non-Bedrock backend"""
         backend = LitellmBackend(mock_model_config)
@@ -328,13 +344,13 @@ class TestLitellmBackend:
         assert "top_p" not in params
         assert "top_k" not in params
 
-    def test_build_params_claude_haiku_drops_top_p_only(self, mock_model_config):
-        """Other Claude models (e.g. Haiku) keep temperature but drop top_p."""
+    def test_build_params_claude_haiku_omits_sampling_params(self, mock_model_config):
         mock_model_config.upstream_model = "us.anthropic.claude-haiku-4-5-v1:0"
         backend = LitellmBackend(mock_model_config)
         params = backend.build_params(stream=False, tools=[], messages=[])
+        assert "temperature" not in params
         assert "top_p" not in params
-        assert "temperature" in params
+        assert "top_k" not in params
 
     def test_apply_claude_upstream_sampling_params(self):
         p = {"temperature": 0.5, "top_p": 0.9, "top_k": 5, "max_tokens": 100}
