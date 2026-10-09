@@ -217,7 +217,7 @@ def orphaned_sidecar_assert(ctx):
 
 @when(parsers.parse('the share "{share_id}" is fetched'))
 def get_share(ctx, share_id):
-    ctx["response"] = asyncio.run(share_api.get_share(share_id))
+    ctx["response"] = asyncio.run(share_api.get_share(_mock_request({}), share_id))
 
 
 def _failing_get(prefix: str, error: Exception):

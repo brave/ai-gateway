@@ -229,7 +229,7 @@ class TestGetShare:
             patch("aichat.serve.share_api._S3_SESSION", mock_session),
             patch("aichat.serve.share_api.SHARE_ACCESSED") as mock_metric,
         ):
-            response = await get_share("test-share-id")
+            response = await get_share(_mock_request({}), "test-share-id")
 
         assert response.status_code == 200
         body = json.loads(response.body)
@@ -246,7 +246,7 @@ class TestGetShare:
             patch("aichat.serve.share_api._S3_SESSION", mock_session),
             patch("aichat.serve.share_api.SHARE_NOT_FOUND") as mock_metric,
         ):
-            response = await get_share("missing-id")
+            response = await get_share(_mock_request({}), "missing-id")
 
         assert response.status_code == 404
         mock_metric.inc.assert_called_once()
@@ -261,7 +261,7 @@ class TestGetShare:
             patch("aichat.serve.share_api._S3_SESSION", mock_session),
             patch("aichat.serve.share_api.SHARE_NOT_FOUND") as mock_metric,
         ):
-            response = await get_share("missing-id")
+            response = await get_share(_mock_request({}), "missing-id")
 
         assert response.status_code == 404
         mock_metric.inc.assert_called_once()
@@ -273,7 +273,7 @@ class TestGetShare:
         )
 
         with patch("aichat.serve.share_api._S3_SESSION", mock_session):
-            response = await get_share("test-id")
+            response = await get_share(_mock_request({}), "test-id")
 
         assert response.status_code == 500
 
@@ -284,7 +284,7 @@ class TestGetShare:
         )
 
         with patch("aichat.serve.share_api._S3_SESSION", mock_session):
-            response = await get_share("test-id")
+            response = await get_share(_mock_request({}), "test-id")
 
         assert response.status_code == 500
 
@@ -301,7 +301,7 @@ class TestGetShare:
         ):
             mock_settings.share_viewer_origin = "https://brave.ai"
             mock_settings.share_s3_bucket = "test-bucket"
-            response = await get_share("test-id")
+            response = await get_share(_mock_request({}), "test-id")
 
         assert response.status_code == 200
         assert response.headers.get("access-control-allow-origin") == "https://brave.ai"
@@ -319,7 +319,7 @@ class TestGetShare:
         ):
             mock_settings.share_viewer_origin = ""
             mock_settings.share_s3_bucket = "test-bucket"
-            response = await get_share("test-id")
+            response = await get_share(_mock_request({}), "test-id")
 
         assert "access-control-allow-origin" not in response.headers
 
@@ -337,7 +337,7 @@ class TestGetShare:
         ):
             mock_settings.share_viewer_origin = "https://brave.ai"
             mock_settings.share_s3_bucket = "test-bucket"
-            response = await get_share("missing-id")
+            response = await get_share(_mock_request({}), "missing-id")
 
         assert response.status_code == 404
         assert response.headers.get("access-control-allow-origin") == "https://brave.ai"
@@ -354,7 +354,7 @@ class TestGetShare:
         ):
             mock_settings.share_viewer_origin = "https://brave.ai"
             mock_settings.share_s3_bucket = "test-bucket"
-            response = await get_share("test-id")
+            response = await get_share(_mock_request({}), "test-id")
 
         assert response.status_code == 500
         assert response.headers.get("access-control-allow-origin") == "https://brave.ai"
@@ -371,7 +371,7 @@ class TestGetShare:
         ):
             mock_settings.share_viewer_origin = ""
             mock_settings.share_s3_bucket = "test-bucket"
-            response = await get_share("missing-id")
+            response = await get_share(_mock_request({}), "missing-id")
 
         assert response.status_code == 404
         assert "access-control-allow-origin" not in response.headers
