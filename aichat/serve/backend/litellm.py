@@ -166,18 +166,42 @@ def apply_claude_upstream_sampling_params(
 ) -> None:
     """Drop sampling params that Bedrock rejects for the target upstream model.
 
-    Claude Opus/Sonnet omit temperature, top_p, and top_k; other Claude models omit top_p.
-    Bedrock GPT-6 Luna and xAI Grok omit temperature (and top_p/top_k when present).
+    Claude Opus/Sonnet/Haiku omit temperature, top_p, and top_k; other Claude models
+    omit top_p. Bedrock GPT-6 Luna and xAI Grok omit temperature (and top_p/top_k when
+    present).
     """
     if not upstream_model:
         return
     u = upstream_model.lower()
     no_sampling = ("temperature", "top_p", "top_k")
-    if "opus" in u or "sonnet" in u or "gpt-6-luna" in u or "grok" in u:
+    if "opus" in u or "sonnet" in u or "haiku" in u or "gpt-6-luna" in u or "grok" in u:
         for k in no_sampling:
             params.pop(k, None)
     elif "claude" in u:
         params.pop("top_p", None)
+
+
+def apply_sampling_params_for_router(
+    config: ModelConfig, params: dict[str, Any]
+) -> None:
+    """Apply Bedrock sampling constraints for the primary model and fallback chain."""
+    apply_claude_upstream_sampling_params(config.upstream_model, params)
+    seen: set[str] = set()
+    queue = list(config.fallback_models)
+    while queue:
+        fallback_id = queue.pop(0)
+        if fallback_id in seen:
+            continue
+        seen.add(fallback_id)
+        fallback_cfg = model_settings.models.get(fallback_id)
+        if not fallback_cfg:
+            continue
+        apply_claude_upstream_sampling_params(
+            fallback_cfg.get("upstream_model"), params
+        )
+        if params.get("reasoning_effort") and not fallback_cfg.get("reasoning_effort"):
+            params.pop("reasoning_effort")
+        queue.extend(fallback_cfg.get("fallback_models", []) or [])
 
 
 def get_global_router() -> Router:
@@ -537,6 +561,8 @@ class LitellmBackend(Backend):
                 messages = map_tool_role_to_assistant(messages)
             else:
                 messages = split_assistant_content_with_tool_calls(messages)
+        if params:
+            apply_sampling_params_for_router(self.config, params)
         completion_params = {
             "model": self.config.model_id,
             "messages": messages,
@@ -643,30 +669,7 @@ class LitellmBackend(Backend):
         if self.config.reasoning_effort:
             params["reasoning_effort"] = self.config.reasoning_effort
 
-        apply_claude_upstream_sampling_params(self.config.upstream_model, params)
-        # litellm's Router runs fallbacks (transitively) with these same params,
-        # so they must also satisfy any Claude-on-Bedrock model reachable via the
-        # fallback chain (Haiku rejects top_p; Opus/Sonnet reject all sampling
-        # params).
-        seen: set[str] = set()
-        queue = list(self.config.fallback_models)
-        while queue:
-            fallback_id = queue.pop(0)
-            if fallback_id in seen:
-                continue
-            seen.add(fallback_id)
-            fallback_cfg = model_settings.models.get(fallback_id)
-            if not fallback_cfg:
-                continue
-            apply_claude_upstream_sampling_params(
-                fallback_cfg.get("upstream_model"), params
-            )
-            # Drop reasoning_effort if any fallback in the chain doesn't support it.
-            if params.get("reasoning_effort") and not fallback_cfg.get(
-                "reasoning_effort"
-            ):
-                params.pop("reasoning_effort")
-            queue.extend(fallback_cfg.get("fallback_models", []) or [])
+        apply_sampling_params_for_router(self.config, params)
 
         if should_use_prompt_caching:
             # Reserve a checkpoint for the tools cachePoint (set on the tools
