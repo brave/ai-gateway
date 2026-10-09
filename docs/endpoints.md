@@ -60,6 +60,14 @@ curl -X POST http://127.0.0.1:8000/v1/passthrough -H "Content-Type: application/
 
 Requests that do not present a matching key stay on the regular chat completions path. Set `API_KEY_CHAT_ENABLED=false` to disable the API-key path entirely.
 
+Set `API_KEY_HOST` to route by host instead of by header. When it matches the `Host` or `X-Forwarded-Host` header:
+
+- `POST /v1/chat/completions` requires an API key and returns `401` without one.
+- Other `/v1/*` routes return `403`.
+- Requests to any other host that present an API key return `401`.
+
+When `API_KEY_HOST` is unset, routing falls back to the key prefix check above.
+
 (Still in development, disabled in production)
 
 ```sh
