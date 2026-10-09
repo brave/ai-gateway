@@ -29,7 +29,14 @@ def ctx():
         "status": 200,
         "break_first": False,
         "break_all": False,
+        "transport_error": "read_error",
     }
+
+
+def _raise_transport_error(ctx, request: httpx.Request) -> None:
+    if ctx["transport_error"] == "remote_protocol_error":
+        raise httpx.RemoteProtocolError("malformed response", request=request)
+    raise httpx.ReadError("broken pipe", request=request)
 
 
 _CLIENTS: list[httpx.AsyncClient] = []
@@ -46,7 +53,7 @@ def make_client(ctx) -> httpx.AsyncClient:
     def handler(request: httpx.Request) -> httpx.Response:
         ctx["attempts"] += 1
         if ctx["break_all"] or (ctx["break_first"] and ctx["attempts"] == 1):
-            raise httpx.ReadError("broken pipe", request=request)
+            _raise_transport_error(ctx, request)
         ctx["requests"].append(
             {
                 "method": request.method,
@@ -79,6 +86,12 @@ def _(ctx):
 @given("aichat-internal breaks every response")
 def _(ctx):
     ctx["break_all"] = True
+
+
+@given("aichat-internal aborts the first response with a protocol error")
+def _(ctx):
+    ctx["break_first"] = True
+    ctx["transport_error"] = "remote_protocol_error"
 
 
 @when("auth verify is sent", target_fixture="result")
