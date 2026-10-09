@@ -68,6 +68,17 @@ async def sku_verify(
     )
 
 
+async def api_key_verify(
+    client: httpx.AsyncClient, api_key: str
+) -> dict[str, Any] | None:
+    return await _post(
+        client,
+        "/1/api_key/verify",
+        {"api_key": api_key},
+        idempotent=True,
+    )
+
+
 async def rate_limit_salts(client: httpx.AsyncClient) -> dict[str, Any] | None:
     return await _get(client, "/1/rate_limit_salts", idempotent=True)
 
@@ -190,6 +201,9 @@ async def _post(
                 timeout=internal_settings.internal_request_timeout_seconds,
             )
         except httpx.RemoteProtocolError as e:
+            if not idempotent:
+                _report_unavailable(path, type(e).__name__, str(e))
+                return None
             if not _handle_retryable_error(path, e, attempt):
                 return None
             continue
@@ -225,6 +239,9 @@ async def _get(
                 url, timeout=internal_settings.internal_request_timeout_seconds
             )
         except httpx.RemoteProtocolError as e:
+            if not idempotent:
+                _report_unavailable(path, type(e).__name__, str(e))
+                return None
             if not _handle_retryable_error(path, e, attempt):
                 return None
             continue

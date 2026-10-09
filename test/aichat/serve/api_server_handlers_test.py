@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import Request
@@ -13,50 +13,6 @@ def _request(path="/v1/chat/completions", api_key=None):
     req.headers = {"authorization": f"Bearer {api_key}"} if api_key else {}
     req.state = MagicMock()
     return req
-
-
-@pytest.mark.asyncio
-async def test_api_key_dispatch_invalid_key(monkeypatch):
-    monkeypatch.setattr(api_server.server_settings, "api_key_chat_enabled", True)
-    request = _request(api_key="other_not-valid")
-    sentinel = MagicMock()
-    call_next = AsyncMock(return_value=sentinel)
-    response = await api_server.api_key_dispatch(request, call_next)
-    assert response is sentinel
-    call_next.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_api_key_dispatch_other_path(monkeypatch):
-    monkeypatch.setattr(api_server.server_settings, "api_key_chat_enabled", True)
-    sentinel = MagicMock()
-    call_next = AsyncMock(return_value=sentinel)
-    response = await api_server.api_key_dispatch(_request(path="/other"), call_next)
-    assert response is sentinel
-    call_next.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_api_key_dispatch_disabled(monkeypatch):
-    monkeypatch.setattr(api_server.server_settings, "api_key_chat_enabled", False)
-    sentinel = MagicMock()
-    call_next = AsyncMock(return_value=sentinel)
-    response = await api_server.api_key_dispatch(
-        _request(api_key="test_key_" + "a" * 32), call_next
-    )
-    assert response is sentinel
-
-
-@pytest.mark.asyncio
-async def test_api_key_dispatch_valid_key(monkeypatch):
-    monkeypatch.setattr(api_server.server_settings, "api_key_chat_enabled", True)
-    sentinel = MagicMock()
-    handle = AsyncMock(return_value=sentinel)
-    with patch.object(api_server.api_key_chat_api, "handle_chat_completions", handle):
-        response = await api_server.api_key_dispatch(
-            _request(api_key="test_key_" + "a" * 32), AsyncMock()
-        )
-    assert response is sentinel
 
 
 @pytest.mark.asyncio

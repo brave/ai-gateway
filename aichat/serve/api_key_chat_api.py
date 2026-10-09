@@ -3,15 +3,22 @@ from collections.abc import AsyncIterator
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.routing import APIRoute
 from openai.types.chat import CompletionCreateParams
 from pydantic import TypeAdapter
+from starlette.datastructures import Headers
 from starlette.requests import Request
+from starlette.routing import Match
+from starlette.types import Scope
 
 from aichat.protocol.open_ai_protocol import MessageUnion
+from aichat.serve import internal_client
 from aichat.serve.api_key_chat_settings import api_key_chat_settings
 from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
 from aichat.serve.common_api import extract_bearer_token
+from aichat.serve.internal_settings import internal_settings
 from aichat.serve.open_ai_api import detect_media_content, get_last_user_message_content
+from aichat.serve.server_settings import server_settings
 from aichat.serve.services.backend import get_backend
 from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
 from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
@@ -21,7 +28,7 @@ from aichat.serve.utils import get_real_ip
 
 logger = logging.getLogger(__name__)
 
-v1_router = APIRouter()
+CHAT_COMPLETIONS_PATH = "/v1/chat/completions"
 
 _request_adapter = TypeAdapter(CompletionCreateParams)
 _message_adapter = TypeAdapter(MessageUnion)
@@ -50,6 +57,62 @@ def api_key_from_authorization(authorization: str | None) -> str | None:
     return token
 
 
+def is_api_key_host(headers: Headers) -> bool:
+    api_key_host = api_key_chat_settings.api_key_host
+    if not api_key_host:
+        return False
+    return api_key_host in (headers.get("host"), headers.get("x-forwarded-host"))
+
+
+def is_api_key_request(headers: Headers) -> bool:
+    if not server_settings.api_key_chat_enabled:
+        return False
+    if api_key_chat_settings.api_key_host:
+        return is_api_key_host(headers)
+    return api_key_from_authorization(headers.get("authorization")) is not None
+
+
+def check_api_key_host(request: Request) -> JSONResponse | None:
+    if (
+        not server_settings.api_key_chat_enabled
+        or not api_key_chat_settings.api_key_host
+    ):
+        return None
+    if is_api_key_host(request.headers):
+        path = request.url.path
+        if path.startswith("/v1/") and path != CHAT_COMPLETIONS_PATH:
+            return openai_error_response(
+                403, "This endpoint is not available.", "permission_denied"
+            )
+        return None
+    if api_key_from_authorization(request.headers.get("authorization")) is not None:
+        return openai_error_response(
+            401, "API keys are not accepted on this host.", "invalid_api_key"
+        )
+    return None
+
+
+class ApiKeyRoute(APIRoute):
+    def matches(self, scope: Scope) -> tuple[Match, Scope]:
+        if scope["type"] == "http" and not is_api_key_request(Headers(scope=scope)):
+            return Match.NONE, {}
+        return super().matches(scope)
+
+
+v1_router = APIRouter(route_class=ApiKeyRoute)
+
+
+async def authorize_api_key(request: Request, api_key: str) -> JSONResponse | None:
+    if not internal_settings.internal_api_enabled:
+        return None
+    verdict = await internal_client.api_key_verify(request.state.httpx_client, api_key)
+    if verdict is None:
+        return openai_error_response(503, "Service unavailable.", "service_unavailable")
+    if not verdict.get("allowed", False):
+        return openai_error_response(401, "Invalid API key.", "invalid_api_key")
+    return None
+
+
 async def _stream_chunks(response: AsyncIterator) -> AsyncIterator[str]:
     async for chunk in response:
         try:
@@ -60,6 +123,16 @@ async def _stream_chunks(response: AsyncIterator) -> AsyncIterator[str]:
 
 
 @v1_router.post("/chat/completions", response_model=None)
+async def chat_completions(request: Request):
+    api_key = api_key_from_authorization(request.headers.get("authorization"))
+    if api_key is None:
+        return openai_error_response(401, "Invalid API key.", "invalid_api_key")
+    error = await authorize_api_key(request, api_key)
+    if error is not None:
+        return error
+    return await handle_chat_completions(request)
+
+
 async def handle_chat_completions(request: Request):
     logger.debug("api_key_chat_api.py /chat/completions")
     try:

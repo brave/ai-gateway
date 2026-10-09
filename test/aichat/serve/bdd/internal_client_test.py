@@ -14,6 +14,7 @@ _REAL_AUTH_VERIFY = internal_client.auth_verify
 _REAL_SKU_VERIFY = internal_client.sku_verify
 _REAL_SALTS = internal_client.rate_limit_salts
 _REAL_RATE_LIMIT_CHECK = internal_client.rate_limit_check
+_REAL_API_KEY_VERIFY = internal_client.api_key_verify
 
 FEATURE = "features/internal_client.feature"
 
@@ -28,7 +29,14 @@ def ctx():
         "status": 200,
         "break_first": False,
         "break_all": False,
+        "transport_error": "read_error",
     }
+
+
+def _raise_transport_error(ctx, request: httpx.Request) -> None:
+    if ctx["transport_error"] == "remote_protocol_error":
+        raise httpx.RemoteProtocolError("malformed response", request=request)
+    raise httpx.ReadError("broken pipe", request=request)
 
 
 _CLIENTS: list[httpx.AsyncClient] = []
@@ -45,7 +53,7 @@ def make_client(ctx) -> httpx.AsyncClient:
     def handler(request: httpx.Request) -> httpx.Response:
         ctx["attempts"] += 1
         if ctx["break_all"] or (ctx["break_first"] and ctx["attempts"] == 1):
-            raise httpx.ReadError("broken pipe", request=request)
+            _raise_transport_error(ctx, request)
         ctx["requests"].append(
             {
                 "method": request.method,
@@ -80,6 +88,12 @@ def _(ctx):
     ctx["break_all"] = True
 
 
+@given("aichat-internal aborts the first response with a protocol error")
+def _(ctx):
+    ctx["break_first"] = True
+    ctx["transport_error"] = "remote_protocol_error"
+
+
 @when("auth verify is sent", target_fixture="result")
 def _(ctx):
     return asyncio.run(
@@ -108,6 +122,15 @@ def _(ctx, credential):
             idempotency_key="idem-1",
         )
     )
+
+
+@when(
+    parsers.parse('api key verify is sent with key "{api_key}"'),
+    target_fixture="result",
+)
+def _(ctx, api_key):
+    ctx["api_key"] = api_key
+    return asyncio.run(_REAL_API_KEY_VERIFY(make_client(ctx), api_key))
 
 
 @when("rate limit salts are requested", target_fixture="result")
@@ -165,6 +188,17 @@ def _(ctx):
         "service_key_id": "sk-1",
         "idempotency_key": "idem-1",
     }
+
+
+@then("the api key verify payload carried the key")
+def _(ctx):
+    assert ctx["requests"][-1]["body"] == {"api_key": ctx["api_key"]}
+
+
+@then("the api key verdict succeeded on the second attempt")
+def _(ctx, result):
+    assert ctx["attempts"] == 2
+    assert result == {"ok": True, "current": "c"}
 
 
 @then("the rate limit payload carried the hashed identity")
