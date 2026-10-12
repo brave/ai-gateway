@@ -123,7 +123,12 @@ async def create_share(
 
 
 @v1_router.get("/share/{share_id}")
-async def get_share(share_id: str) -> JSONResponse:
+@rate_limit_route(
+    config_key="share_get",
+    route_path="/share/{share_id}",
+    error_message="Daily rate limit exceeded for share retrieval endpoint",
+)
+async def get_share(request: Request, share_id: str) -> JSONResponse:
     try:
         async with _S3_SESSION.create_client("s3") as s3:
             obj = await s3.get_object(
