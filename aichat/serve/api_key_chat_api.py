@@ -113,9 +113,10 @@ async def authorize_api_key(request: Request, api_key: str) -> JSONResponse | No
     return None
 
 
-async def _stream_chunks(response: AsyncIterator) -> AsyncIterator[str]:
+async def _stream_chunks(response: AsyncIterator, model: str) -> AsyncIterator[str]:
     async for chunk in response:
         try:
+            chunk.model = model
             yield f"data: {chunk.model_dump_json()}\n\n"
         except Exception as e:
             logger.warning(f"Failed to serialize chunk: {e}")
@@ -195,9 +196,9 @@ async def handle_chat_completions(request: Request):
         apply_claude_upstream_sampling_params(backend.config.upstream_model, params)
 
         response = await backend.converse(messages, stream=stream, params=params)
-    except Exception as e:
+    except Exception:
         logger.exception("API-key chat completion failed")
-        return openai_error_response(500, str(e), "internal_error")
+        return openai_error_response(500, "Internal server error.", "internal_error")
 
     if isinstance(response, dict) and response.get("type") == "error":
         return openai_error_response(
@@ -208,6 +209,7 @@ async def handle_chat_completions(request: Request):
 
     if stream:
         return StreamingResponse(
-            _stream_chunks(response), media_type="text/event-stream"
+            _stream_chunks(response, model), media_type="text/event-stream"
         )
+    response.model = model
     return JSONResponse(content=response.model_dump())

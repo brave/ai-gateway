@@ -130,6 +130,7 @@ class TestHandleChatCompletions:
         ):
             resp = await api_key_chat_api.handle_chat_completions(mock_request)
         assert resp.status_code == 500
+        assert b"no backend" not in resp.body
 
     @pytest.mark.asyncio
     async def test_error_dict_response(self, mock_request):
@@ -222,9 +223,13 @@ class TestStreamChunks:
         async def gen():
             yield chunk
 
-        out = [chunk_out async for chunk_out in api_key_chat_api._stream_chunks(gen())]
+        out = [
+            chunk_out
+            async for chunk_out in api_key_chat_api._stream_chunks(gen(), "test-model")
+        ]
         assert out[-1] == "data: [DONE]\n\n"
         assert out[0] == 'data: {"id": "1"}\n\n'
+        assert chunk.model == "test-model"
 
     @pytest.mark.asyncio
     async def test_unserializable_chunk_logs_warning(self):
@@ -234,5 +239,8 @@ class TestStreamChunks:
         async def gen():
             yield chunk
 
-        out = [chunk_out async for chunk_out in api_key_chat_api._stream_chunks(gen())]
+        out = [
+            chunk_out
+            async for chunk_out in api_key_chat_api._stream_chunks(gen(), "test-model")
+        ]
         assert out == ["data: [DONE]\n\n"]
