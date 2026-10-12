@@ -5,6 +5,7 @@ import httpx
 from prometheus_client import REGISTRY, Counter, Histogram
 
 from aichat.serve.external_service_settings import external_service_settings
+from aichat.serve.user_message_text import extract_last_user_message_text
 
 logger = logging.getLogger(__name__)
 
@@ -31,40 +32,10 @@ ANALYTICS_REQUEST_ERRORS = Counter(
 )
 
 
-def _extract_text_from_content(content: str | list | None) -> str:
-    # Messages come in not as plain text but as a list of dictionaries, e.g.:
-    #
-    #   [
-    #     {'text': 'hello', 'type': 'text'},
-    #     {'type': 'text', 'text': 'This is the text of a web page: <page>some page context</page>.'},
-    #   ]
-    #
-    # We need to normalise them to just the text combined, e.g.:
-    #
-    #   hello\n\nThis is the text of a web page: <page>some page context</page>.
-    if content is None:
-        return ""
-
-    if isinstance(content, str):
-        return content
-
-    if isinstance(content, list):
-        parts: list[str] = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                text = item.get("text")
-                if isinstance(text, str) and text:
-                    parts.append(text)
-        return "\n\n".join(parts)
-
-    return ""
-
-
 async def send_analytics_request(
     messages: list[dict] | None = None,
     model: str = "",
+    androcles_probabilities: list[float] | None = None,
 ):
     """
     Send analytics data to external API without waiting for response.
@@ -84,12 +55,7 @@ async def send_analytics_request(
 
     try:
         # Extract the text from the last user chat message
-        text = ""
-        if messages:
-            for message in reversed(messages):
-                if message["role"] == "user":
-                    text = _extract_text_from_content(message.get("content"))
-                    break
+        text = extract_last_user_message_text(messages or [])
 
         # Prepare analytics payload
         analytics_data = {
@@ -103,6 +69,9 @@ async def send_analytics_request(
             )
             ANALYTICS_REQUESTS_TOTAL.labels(model=model, status="skipped").inc()
             return
+
+        if androcles_probabilities:
+            analytics_data["androcles_probabilities"] = androcles_probabilities
 
         async with httpx.AsyncClient() as httpx_client:
             # Send fire-and-forget request with short timeout
