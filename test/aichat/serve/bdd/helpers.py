@@ -246,7 +246,7 @@ def run_stream_pipeline(
         async for event in open_ai_api.process_streaming_response(
             response_gen(),
             request,
-            [],
+            ctx.get("pipeline_advertised_tools", []),
             mcp_executor,
             backend,
             model_config,

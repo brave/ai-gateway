@@ -13,8 +13,11 @@ from openai.types.chat.chat_completion_chunk import (
 from aichat.llm.metrics import FUNCTION_CALL_COUNTER
 from aichat.protocol.open_ai_protocol import (
     AssistantMessage,
+    Capability,
+    CapabilityOptions,
     ToolCallFunction,
     ToolMessage,
+    has_capability,
 )
 from aichat.protocol.open_ai_protocol import (
     ToolCall as OpenAIToolCall,
@@ -39,6 +42,30 @@ logger = logging.getLogger(__name__)
 
 # Streaming tools that require special handling
 STREAMING_TOOLS = {"deep_research"}
+
+
+def advertised_tool_names(tools: list | None) -> set[str]:
+    """Tool names sent to the model for this request."""
+    names: set[str] = set()
+    for tool in tools or []:
+        if isinstance(tool, str):
+            names.add(tool)
+        elif tool.function and tool.function.name:
+            names.add(tool.function.name)
+    return names
+
+
+def may_run_streaming_tool(
+    tool_name: str,
+    advertised: set[str],
+    brave_capability: CapabilityOptions = None,
+) -> bool:
+    """Whether a model-emitted streaming tool call may run server-side."""
+    if tool_name not in advertised:
+        return False
+    if tool_name == "deep_research":
+        return has_capability(brave_capability, Capability.deep_research)
+    return True
 
 
 async def execute_tools_and_stream_events(
