@@ -124,10 +124,14 @@ def _ohttp_attestation() -> dict[str, str]:
     return {"key_config": "aa", "signing_key": "bb", "signature": "cc"}
 
 
+_SERVING_SHA256 = "e" * 64
+
+
 def _compose_manager_attestation(image: str) -> dict:
     return {
         "actions": [
             {"action": near.COMPOSE_MANAGER_STARTED_ACTION, "image": image},
+            {"action": near.COMPOSE_UP_ACTION, "file_sha256": _SERVING_SHA256},
         ]
     }
 
@@ -140,6 +144,7 @@ def _cloud_api_report(digests):
         },
         "model_attestations": [
             {
+                "model_name": "org/model",
                 "signing_address": "md",
                 "ohttp_attestation": _ohttp_attestation(),
                 "info": {"tcb_info": {"app_compose": _build_app_compose(digests)}},
@@ -154,6 +159,7 @@ def _cloud_api_report(digests):
 
 def _completions_report():
     return {
+        "model_name": "org/model",
         "signing_address": "md",
         "ohttp_attestation": _ohttp_attestation(),
         "info": {"tcb_info": {"app_compose": _build_app_compose({})}},
@@ -208,6 +214,7 @@ async def test_fetch_attestation(
 
     assert (details.gateway_app_compose is not None) == has_gateway_compose
     assert details.signing_keys == expected_signing_keys
+    assert details.model_name == "org/model"
     assert details.ohttp_attestation.signing_key == "bb"
     # The attestation endpoint is authenticated: the bearer token must be sent.
     assert _FakeAsyncClient.last_headers == {"Authorization": "Bearer test-key"}
@@ -234,14 +241,23 @@ def fake_s3(monkeypatch):
     return client
 
 
-def _details(signing_keys: list[str]) -> near.AttestationDetails:
+_SERVING_KEY = f"{near.SERVING_COMPOSE_PREFIX}/org/model/{_SERVING_SHA256}.json"
+
+
+def _details(
+    signing_keys: list[str], serving_sha256: str | None = _SERVING_SHA256
+) -> near.AttestationDetails:
     return near.AttestationDetails(
+        model_name="org/model",
         gateway_app_compose=None,
         compose_actions=[
             near.ComposeAction(
                 action=near.COMPOSE_MANAGER_STARTED_ACTION,
                 image="repo@sha256:cm",
-            )
+            ),
+            near.ComposeAction(
+                action=near.COMPOSE_UP_ACTION, file_sha256=serving_sha256
+            ),
         ],
         signing_keys=signing_keys,
         ohttp_attestation=near.OHTTPAttestation(
@@ -270,6 +286,7 @@ def test_verify_attestation_completions_success(monkeypatch, fake_s3):
     assert near._verify_attestation(details, "m") is True
     assert f"{near.PRE_VERIFIED_PREFIX}/cm.json" in fake_s3.head_keys
     assert f"{near.SIGNING_KEYS_PREFIX}/bb.json" in fake_s3.head_keys
+    assert _SERVING_KEY in fake_s3.head_keys
 
 
 def test_verify_attestation_fails_when_pre_verified_missing(monkeypatch, fake_s3):
@@ -288,3 +305,31 @@ def test_verify_attestation_fails_when_signing_key_unregistered(monkeypatch, fak
     details = _details(["bb"])
 
     assert near._verify_attestation(details, "m") is False
+
+
+def test_verify_attestation_fails_when_serving_compose_unapproved(monkeypatch, fake_s3):
+    # New model weights mean a new compose file_sha256 with no marker.
+    monkeypatch.setattr(near, "_verify_ohttp_signature", lambda _: True)
+    fake_s3.missing.add(_SERVING_KEY)
+
+    assert near._verify_attestation(_details(["bb"]), "m") is False
+
+
+@pytest.mark.parametrize("serving_sha256", [None, "not-a-sha"])
+def test_verify_attestation_fails_without_serving_compose(
+    monkeypatch, fake_s3, serving_sha256
+):
+    monkeypatch.setattr(near, "_verify_ohttp_signature", lambda _: True)
+
+    details = _details(["bb"], serving_sha256=serving_sha256)
+
+    assert near._verify_attestation(details, "m") is False
+
+
+def test_last_compose_up_sha256_uses_latest_entry():
+    actions = [
+        near.ComposeAction(action=near.COMPOSE_UP_ACTION, file_sha256="A" * 64),
+        near.ComposeAction(action="other"),
+        near.ComposeAction(action=near.COMPOSE_UP_ACTION, file_sha256="B" * 64),
+    ]
+    assert near._last_compose_up_sha256(actions) == "b" * 64

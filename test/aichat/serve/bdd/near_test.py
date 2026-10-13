@@ -59,6 +59,12 @@ class FakeS3:
         behavior = self.ctx.get("s3_head_behavior", "exists")
         if behavior == "exists":
             return {}
+        if behavior == "no-serving-compose":
+            if Key.startswith(f"{near_mod.SERVING_COMPOSE_PREFIX}/"):
+                raise ClientError(
+                    {"Error": {"Code": "404", "Message": ""}}, "HeadObject"
+                )
+            return {}
         if behavior == "404":
             raise ClientError({"Error": {"Code": "404", "Message": ""}}, "HeadObject")
         raise ClientError(
@@ -197,6 +203,10 @@ def _compose_app_compose(images):
     return json_mod.dumps({"docker_compose_file": json_mod.dumps(compose)})
 
 
+ATTESTED_MODEL = "z-ai/glm-test"
+SERVING_SHA256 = "ab" * 32
+SERVING_COMPOSE_KEY = f"serving-compose/{ATTESTED_MODEL}/{SERVING_SHA256}.json"
+
 TARGET_IMAGES = [
     "nearaidev/cloud-api",
     "nearaidev/cvm-ingress",
@@ -325,10 +335,20 @@ def _attestation_for(ctx, *, tampered=False, registered=True, compose_state="mis
                 for i, target in enumerate(TARGET_IMAGES)
             ]
         )
+    elif compose_state == "verified without compose up":
+        actions = [
+            ComposeAction(
+                action="compose_manager_started",
+                image="quay.io/nearaidev/cloud-api@sha256:abc123",
+            )
+        ]
     else:
         gateway_app_compose = None
+    if compose_state in ("verified", "mismatched", "digested"):
+        actions.append(ComposeAction(action="compose_up", file_sha256=SERVING_SHA256))
     signing_keys = [signing_key_hex] if registered else ["de" * 32]
     return AttestationDetails(
+        model_name=ATTESTED_MODEL,
         gateway_app_compose=gateway_app_compose,
         compose_actions=actions,
         signing_keys=signing_keys,
@@ -357,7 +377,11 @@ def attestation_compose(ctx, compose_state):
 
 @given(parsers.parse("the s3 heads return {s3_state}"))
 def attestation_s3_state(ctx, s3_state):
-    ctx["s3_head_behavior"] = "exists" if s3_state == "objects" else "404"
+    ctx["s3_head_behavior"] = {
+        "objects": "exists",
+        "missing": "404",
+        "all but the serving compose": "no-serving-compose",
+    }[s3_state]
 
 
 @when("the attestation is verified")
@@ -391,6 +415,8 @@ def headed_keys_assert(ctx, headed_keys):
                 expected.append(fragment)
             elif fragment == "signing-keys/{signing_key}.json":
                 expected.append(f"signing-keys/{ctx['signing_key_hex']}.json")
+            elif fragment == "serving-compose/{model}/{sha256}.json":
+                expected.append(SERVING_COMPOSE_KEY)
             else:
                 raise AssertionError(f"unknown headed-keys fragment: {fragment!r}")
     assert ctx.get("s3_heads", []) == expected
@@ -453,6 +479,7 @@ def digested_heads_assert(ctx):
     # also verified for this scenario.
     expected.add(f"{prefix}/abc123.json")
     expected.add(f"signing-keys/{ctx['signing_key_hex']}.json")
+    expected.add(SERVING_COMPOSE_KEY)
     assert heads == expected, (heads, expected)
 
 

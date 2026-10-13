@@ -1,6 +1,6 @@
 Feature: NEAR TEE attestation
-  Signature verification, image digest extraction, S3 pre-verification checks
-  and the cached ohttp config lookup.
+  Signature verification, image digest extraction, S3 pre-verification checks,
+  the serving compose approval and the cached ohttp config lookup.
 
   Background:
     Given the near harness
@@ -71,13 +71,15 @@ Feature: NEAR TEE attestation
     And the s3 heads checked <headed_keys>
 
     Examples:
-      | sig_state | keys_state   | compose_state | s3_state | verdict    | headed_keys                                                  |
-      | valid     | registered   | verified      | objects  | successful | pre-verified/abc123.json + signing-keys/{signing_key}.json           |
-      | valid     | registered   | missing       | objects  | failed     | none                                                         |
-      | tampered  | registered   | verified      | objects  | failed     | none                                                         |
-      | valid     | unregistered | verified      | objects  | failed     | none                                                         |
-      | valid     | registered   | mismatched    | objects  | failed     | none                                                         |
-      | valid     | registered   | verified      | missing  | failed     | pre-verified/abc123.json                                     |
+      | sig_state | keys_state   | compose_state               | s3_state                    | verdict    | headed_keys                                                                                        |
+      | valid     | registered   | verified                    | objects                     | successful | pre-verified/abc123.json + signing-keys/{signing_key}.json + serving-compose/{model}/{sha256}.json |
+      | valid     | registered   | missing                     | objects                     | failed     | none                                                                                               |
+      | tampered  | registered   | verified                    | objects                     | failed     | none                                                                                               |
+      | valid     | unregistered | verified                    | objects                     | failed     | none                                                                                               |
+      | valid     | registered   | mismatched                  | objects                     | failed     | none                                                                                               |
+      | valid     | registered   | verified                    | missing                     | failed     | pre-verified/abc123.json                                                                           |
+      | valid     | registered   | verified without compose up | objects                     | failed     | pre-verified/abc123.json + signing-keys/{signing_key}.json                                         |
+      | valid     | registered   | verified                    | all but the serving compose | failed     | pre-verified/abc123.json + signing-keys/{signing_key}.json + serving-compose/{model}/{sha256}.json |
 
   Scenario: A non-404 s3 head error is re-raised
     Given an s3 head client that raises AccessDenied

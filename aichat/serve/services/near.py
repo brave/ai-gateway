@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re
 
 import boto3
 import httpx
@@ -27,10 +28,12 @@ class OHTTPAttestation(BaseModel):
 class ComposeAction(BaseModel):
     action: str
     image: str | None = None
+    file_sha256: str | None = None
 
 
 # Normalised result returned by _fetch_attestation regardless of endpoint format.
 class AttestationDetails(BaseModel):
+    model_name: str
     gateway_app_compose: str | None = None
     compose_actions: list[ComposeAction]
     signing_keys: list[str]
@@ -52,6 +55,7 @@ class ComposeManagerAttestation(BaseModel):
 # Per-model attestation. Returned directly by the completions endpoint (old format,
 # direct compute connection) and nested under model_attestations on the cloud-api endpoint.
 class ModelAttestation(BaseModel):
+    model_name: str = Field(min_length=1)
     signing_address: str
     ohttp_attestation: OHTTPAttestation
     info: AttestationInfo
@@ -81,7 +85,9 @@ class OHTTPConfig(BaseModel):
 
 PRE_VERIFIED_PREFIX = "pre-verified"
 SIGNING_KEYS_PREFIX = "signing-keys"
+SERVING_COMPOSE_PREFIX = "serving-compose"
 COMPOSE_MANAGER_STARTED_ACTION = "compose_manager_started"
+COMPOSE_UP_ACTION = "compose_up"
 TARGET_IMAGES = (
     "nearaidev/cloud-api",
     "nearaidev/cvm-ingress",
@@ -147,6 +153,22 @@ def _last_compose_manager_image(compose_actions: list[ComposeAction]) -> str | N
     return image.split("@sha256:")[1]
 
 
+def _last_compose_up_sha256(compose_actions: list[ComposeAction]) -> str | None:
+    """
+    Returns the file_sha256 of the last `compose_up` action (the compose file,
+    and so the model weights, now serving), or None if not present.
+    """
+    sha256: str | None = None
+    for action in compose_actions:
+        if action.action == COMPOSE_UP_ACTION:
+            sha256 = action.file_sha256
+
+    if sha256 is None or not re.fullmatch(r"[0-9a-fA-F]{64}", sha256):
+        return None
+
+    return sha256.lower()
+
+
 def _verify_ohttp_signature(ohttp_attestation: OHTTPAttestation) -> bool:
     """
     Verifies the ed25519 signature over the OHTTP key_config using the
@@ -210,6 +232,21 @@ def _verify_attestation(attestation: AttestationDetails, model_name: str) -> boo
         if not _head_s3(s3_client, SIGNING_KEYS_PREFIX, signing_key):
             logger.warning(f"Signing key not registered for {model_name}")
             return False
+
+    # Step 6: confirm the serving compose is approved for the attested model.
+    # Model weights are pinned in the compose file, so new weights mean a new
+    # file_sha256 that the verifier has not approved.
+    serving_sha256 = _last_compose_up_sha256(attestation.compose_actions)
+    if serving_sha256 is None:
+        logger.warning(f"No compose_up file_sha256 for {model_name}")
+        return False
+    if not _head_s3(
+        s3_client,
+        SERVING_COMPOSE_PREFIX,
+        f"{attestation.model_name}/{serving_sha256}",
+    ):
+        logger.warning(f"Serving compose not approved for {model_name}")
+        return False
 
     return True
 
@@ -295,6 +332,7 @@ async def _fetch_attestation(model_name: str) -> AttestationDetails:
         model_attestation = parsed.model_attestations[0]
         gateway = parsed.gateway_attestation
         return AttestationDetails(
+            model_name=model_attestation.model_name,
             gateway_app_compose=gateway.info.tcb_info.app_compose,
             compose_actions=model_attestation.compose_manager_attestation.actions,
             signing_keys=[gateway.signing_address, model_attestation.signing_address],
@@ -303,6 +341,7 @@ async def _fetch_attestation(model_name: str) -> AttestationDetails:
     else:
         parsed = ModelAttestation.model_validate(data)
         return AttestationDetails(
+            model_name=parsed.model_name,
             gateway_app_compose=None,
             compose_actions=parsed.compose_manager_attestation.actions,
             signing_keys=[parsed.signing_address],
