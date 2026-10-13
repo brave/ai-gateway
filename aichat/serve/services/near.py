@@ -299,10 +299,7 @@ def _verify_attestation(attestation: AttestationDetails, model_name: str) -> boo
 
     # Step 7: the model weights are ones the verifier approved. They are
     # pinned in the compose files, so new weights mean a new compose file.
-    if not _serving_composes_approved(s3_client, attestation):
-        return False
-
-    return True
+    return _serving_composes_approved(s3_client, attestation)
 
 
 def _extract_target_digests(app_compose: str | None) -> dict[str, str]:
