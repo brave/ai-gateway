@@ -223,47 +223,64 @@ async def test_fetch_attestation(
 class _FakeS3Client:
     def __init__(self):
         self.missing: set[str] = set()
+        self.missing_prefixes: set[str] = set()
         self.head_keys: list[str] = []
 
     def head_object(self, Bucket, Key):
         self.head_keys.append(Key)
-        if Key in self.missing:
+        if Key in self.missing or any(Key.startswith(p) for p in self.missing_prefixes):
             from botocore.exceptions import ClientError
 
             raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
 
 
 @pytest.fixture
-def fake_s3(monkeypatch):
+def fake_s3(monkeypatch, reset_models):
     """Installs a fake S3 client. Mutate `.missing` to simulate 404s."""
     client = _FakeS3Client()
     monkeypatch.setattr(near.boto3, "client", lambda *a, **k: client)
+    reset_models["m"] = {"attested_model": "org/model"}
     return client
 
 
-_SERVING_KEY = f"{near.SERVING_COMPOSE_PREFIX}/org/model/{_SERVING_SHA256}.json"
+def _up(sha256: str | None = _SERVING_SHA256, ts: str = "t1") -> near.ComposeAction:
+    return near.ComposeAction(
+        action=near.COMPOSE_UP_ACTION,
+        commit="c",
+        file="prod/m.yaml",
+        file_sha256=sha256,
+        services=["r1"],
+        timestamp=ts,
+    )
 
 
 def _details(
-    signing_keys: list[str], serving_sha256: str | None = _SERVING_SHA256
+    signing_keys: list[str], *ups: near.ComposeAction, model_name: str = "org/model"
 ) -> near.AttestationDetails:
     return near.AttestationDetails(
-        model_name="org/model",
+        model_name=model_name,
         gateway_app_compose=None,
         compose_actions=[
             near.ComposeAction(
                 action=near.COMPOSE_MANAGER_STARTED_ACTION,
                 image="repo@sha256:cm",
             ),
-            near.ComposeAction(
-                action=near.COMPOSE_UP_ACTION, file_sha256=serving_sha256
-            ),
+            *(ups or [_up()]),
         ],
         signing_keys=signing_keys,
         ohttp_attestation=near.OHTTPAttestation(
             key_config="aa", signing_key="bb", signature="cc"
         ),
     )
+
+
+def _log_key(details: near.AttestationDetails, k: int) -> str:
+    head = near._compose_log_chain(details.compose_actions)[k - 1]
+    return f"{near.SERVING_LOG_PREFIX}/org/model/{head}.json"
+
+
+def _compose_key(sha256: str) -> str:
+    return f"{near.SERVING_COMPOSE_PREFIX}/org/model/{sha256}.json"
 
 
 def test_verify_attestation_fails_on_bad_signature(monkeypatch):
@@ -286,7 +303,7 @@ def test_verify_attestation_completions_success(monkeypatch, fake_s3):
     assert near._verify_attestation(details, "m") is True
     assert f"{near.PRE_VERIFIED_PREFIX}/cm.json" in fake_s3.head_keys
     assert f"{near.SIGNING_KEYS_PREFIX}/bb.json" in fake_s3.head_keys
-    assert _SERVING_KEY in fake_s3.head_keys
+    assert _log_key(details, 1) in fake_s3.head_keys
 
 
 def test_verify_attestation_fails_when_pre_verified_missing(monkeypatch, fake_s3):
@@ -307,29 +324,81 @@ def test_verify_attestation_fails_when_signing_key_unregistered(monkeypatch, fak
     assert near._verify_attestation(details, "m") is False
 
 
-def test_verify_attestation_fails_when_serving_compose_unapproved(monkeypatch, fake_s3):
-    # New model weights mean a new compose file_sha256 with no marker.
+@pytest.mark.parametrize("configured", [None, "org/other"])
+def test_verify_attestation_fails_on_unexpected_model(
+    monkeypatch, fake_s3, reset_models, configured
+):
+    # NEAR may route our upstream_model alias to another model.
     monkeypatch.setattr(near, "_verify_ohttp_signature", lambda _: True)
-    fake_s3.missing.add(_SERVING_KEY)
+    reset_models["m"] = {"attested_model": configured} if configured else {}
 
     assert near._verify_attestation(_details(["bb"]), "m") is False
 
 
-@pytest.mark.parametrize("serving_sha256", [None, "not-a-sha"])
-def test_verify_attestation_fails_without_serving_compose(
-    monkeypatch, fake_s3, serving_sha256
-):
+def test_verify_attestation_fails_without_verified_history(monkeypatch, fake_s3):
     monkeypatch.setattr(near, "_verify_ohttp_signature", lambda _: True)
+    fake_s3.missing_prefixes.add(f"{near.SERVING_LOG_PREFIX}/")
 
-    details = _details(["bb"], serving_sha256=serving_sha256)
+    assert near._verify_attestation(_details(["bb"]), "m") is False
+
+
+def test_verify_attestation_checks_ups_after_the_verified_point(monkeypatch, fake_s3):
+    # The verifier saw only the first up. The second up, on another service,
+    # must load an approved compose file.
+    monkeypatch.setattr(near, "_verify_ohttp_signature", lambda _: True)
+    details = _details(["bb"], _up(ts="t1"), _up("f" * 64, ts="t2"))
+    fake_s3.missing.add(_log_key(details, 2))
+
+    assert near._verify_attestation(details, "m") is True
+    assert _compose_key("f" * 64) in fake_s3.head_keys
+
+    fake_s3.missing.add(_compose_key("f" * 64))
+    assert near._verify_attestation(details, "m") is False
+
+
+@pytest.mark.parametrize("sha256", [None, "not-a-sha"])
+def test_verify_attestation_fails_on_unusable_later_up(monkeypatch, fake_s3, sha256):
+    monkeypatch.setattr(near, "_verify_ohttp_signature", lambda _: True)
+    details = _details(["bb"], _up(ts="t1"), _up(sha256, ts="t2"))
+    fake_s3.missing.add(_log_key(details, 2))
 
     assert near._verify_attestation(details, "m") is False
 
 
-def test_last_compose_up_sha256_uses_latest_entry():
+def test_verify_attestation_looks_back_a_bounded_number_of_actions(
+    monkeypatch, fake_s3
+):
+    monkeypatch.setattr(near, "_verify_ohttp_signature", lambda _: True)
+    n = near.SERVING_LOG_LOOKBACK + 1
+    details = _details(["bb"], *[_up(ts=str(i)) for i in range(n)])
+    for k in range(2, n + 1):
+        fake_s3.missing.add(_log_key(details, k))
+
+    assert near._verify_attestation(details, "m") is False
+    assert _log_key(details, 1) not in fake_s3.head_keys
+
+
+def test_compose_log_chain_matches_the_verifier():
+    # Golden values from near-tee-verifier's compose_log_chain on the same
+    # actions; the relay only works while the two agree.
     actions = [
-        near.ComposeAction(action=near.COMPOSE_UP_ACTION, file_sha256="A" * 64),
-        near.ComposeAction(action="other"),
-        near.ComposeAction(action=near.COMPOSE_UP_ACTION, file_sha256="B" * 64),
+        near.ComposeAction(
+            action=near.COMPOSE_UP_ACTION,
+            commit="c1",
+            file="prod/a.yaml",
+            file_sha256="a" * 64,
+            services=["r1", "r2"],
+            timestamp="2026-10-01T00:00:00Z",
+        ),
+        near.ComposeAction(action="docker_clean"),
+        near.ComposeAction(
+            action="compose_down",
+            commit="c1",
+            file="prod/a.yaml",
+            timestamp="2026-10-02T00:00:00Z",
+        ),
     ]
-    assert near._last_compose_up_sha256(actions) == "b" * 64
+    assert near._compose_log_chain(actions) == [
+        "6ac6eac7f896fa9bb0af31616e7532654d2ded2b02229a393950babffb42aa99",
+        "c52c4f93d02081976630c4e96763ba82ff565fd416c111ef0da21e108e749f86",
+    ]
