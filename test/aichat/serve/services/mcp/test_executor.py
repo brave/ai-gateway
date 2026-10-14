@@ -295,7 +295,7 @@ async def test_execute_mcp_tool_sends_brave_context_headers(executor):
         executor._tool_cache = None
         with (
             patch(
-                "aichat.serve.services.mcp.executor.tier_http_headers_for_model",
+                "aichat.serve.services.mcp.executor.mcp_context_headers_for_model",
                 return_value={"X-Brave-Tier": "freemium"},
             ),
             patch("httpx.AsyncClient", return_value=mock_async_client_cm),

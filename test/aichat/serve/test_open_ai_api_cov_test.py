@@ -184,6 +184,51 @@ async def test_process_streaming_response_near_model_passes_api_key():
     assert params.get("api_key") == "NEARKEY"
 
 
+@pytest.mark.parametrize(
+    "advertised,capability,runs_streaming",
+    [
+        (["deep_research"], ["deep_research"], True),
+        ([], None, False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_unauthorized_deep_research_not_executed(
+    advertised, capability, runs_streaming
+):
+    from aichat.protocol.open_ai_protocol import Capability, Tool, ToolFunction
+
+    request = _request()
+    if capability:
+        request = request.model_copy(
+            update={"brave_capability": [Capability.deep_research]}
+        )
+    chunks = [_tool_call_chunk(name="deep_research"), _finish_chunk("tool_calls")]
+    mcp_executor = MagicMock()
+    mcp_executor.is_mcp_tool = AsyncMock(return_value=False)
+    backend = _backend()
+    tools = [Tool(type="function", function=ToolFunction(name=n)) for n in advertised]
+
+    with patch.object(open_ai_api, "handle_streaming_tool_calls") as mock_streaming:
+        mock_streaming.return_value = _empty_async_gen()
+
+        async for _ in open_ai_api.process_streaming_response(
+            _response(chunks),
+            request,
+            tools,
+            mcp_executor=mcp_executor,
+            backend=backend,
+            prompts=MagicMock(augment=Mock(return_value=[])),
+        ):
+            pass
+
+    assert mock_streaming.called is runs_streaming
+
+
+async def _empty_async_gen():
+    return
+    yield  # pragma: no cover
+
+
 @pytest.mark.asyncio
 async def test_process_streaming_response_client_tool_calls_stops():
     """Tool call not MCP -> client tool call path: DONE immediately (1064-1111)."""

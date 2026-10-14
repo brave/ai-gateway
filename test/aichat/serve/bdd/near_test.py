@@ -59,6 +59,12 @@ class FakeS3:
         behavior = self.ctx.get("s3_head_behavior", "exists")
         if behavior == "exists":
             return {}
+        if behavior == "no-serving-log":
+            if Key.startswith(f"{near_mod.SERVING_LOG_PREFIX}/"):
+                raise ClientError(
+                    {"Error": {"Code": "404", "Message": ""}}, "HeadObject"
+                )
+            return {}
         if behavior == "404":
             raise ClientError({"Error": {"Code": "404", "Message": ""}}, "HeadObject")
         raise ClientError(
@@ -80,13 +86,24 @@ def near_harness(ctx, monkeypatch):
     monkeypatch.setattr(near_mod.boto3, "client", lambda *a, **k: FakeS3(ctx))
     monkeypatch.setattr(near_mod.aioredis, "Redis", lambda *a, **k: ctx["redis"])
     monkeypatch.setattr(near_mod, "get_pool", lambda: object())
+    monkeypatch.setattr(
+        near_mod,
+        "model_settings",
+        SimpleNamespace(models={"near-model": {"attested_model": ATTESTED_MODEL}}),
+    )
     return ctx
 
 
 @given(parsers.parse('a model "{model_name}" addressed at "{address}"'))
 def near_model(ctx, model_name, address, monkeypatch):
     ms = SimpleNamespace(
-        models={model_name: {"address": address, "upstream_model": "upstream-x"}}
+        models={
+            model_name: {
+                "address": address,
+                "upstream_model": "upstream-x",
+                "attested_model": ATTESTED_MODEL,
+            }
+        }
     )
     monkeypatch.setattr(near_mod, "model_settings", ms)
     ctx["model_name"] = model_name
@@ -195,6 +212,15 @@ def _compose_app_compose(images):
         "services": {f"svc{i}": {"image": image} for i, image in enumerate(images)}
     }
     return json_mod.dumps({"docker_compose_file": json_mod.dumps(compose)})
+
+
+ATTESTED_MODEL = "z-ai/glm-test"
+SERVING_SHA256 = "ab" * 32
+
+
+def _serving_log_key(attestation):
+    chain = near_mod._compose_log_chain(attestation.compose_actions)
+    return f"serving-log/{ATTESTED_MODEL}/{chain[-1]}.json" if chain else None
 
 
 TARGET_IMAGES = [
@@ -325,10 +351,20 @@ def _attestation_for(ctx, *, tampered=False, registered=True, compose_state="mis
                 for i, target in enumerate(TARGET_IMAGES)
             ]
         )
+    elif compose_state == "verified without compose up":
+        actions = [
+            ComposeAction(
+                action="compose_manager_started",
+                image="quay.io/nearaidev/cloud-api@sha256:abc123",
+            )
+        ]
     else:
         gateway_app_compose = None
+    if compose_state in ("verified", "mismatched", "digested"):
+        actions.append(ComposeAction(action="compose_up", file_sha256=SERVING_SHA256))
     signing_keys = [signing_key_hex] if registered else ["de" * 32]
     return AttestationDetails(
+        model_name=ATTESTED_MODEL,
         gateway_app_compose=gateway_app_compose,
         compose_actions=actions,
         signing_keys=signing_keys,
@@ -357,7 +393,11 @@ def attestation_compose(ctx, compose_state):
 
 @given(parsers.parse("the s3 heads return {s3_state}"))
 def attestation_s3_state(ctx, s3_state):
-    ctx["s3_head_behavior"] = "exists" if s3_state == "objects" else "404"
+    ctx["s3_head_behavior"] = {
+        "objects": "exists",
+        "missing": "404",
+        "all but the serving log": "no-serving-log",
+    }[s3_state]
 
 
 @when("the attestation is verified")
@@ -368,8 +408,18 @@ def verify_attestation(ctx):
         registered=ctx["att_keys_state"] == "registered",
         compose_state=ctx["att_compose_state"],
     )
+    ctx["serving_log_key"] = _serving_log_key(attestation)
     ctx["verdict"] = _verify_attestation(
         attestation, ctx.get("model_name", "near-model")
+    )
+
+
+@given(parsers.parse('the configured attested model is "{attested}"'))
+def configured_attested_model(ctx, attested, monkeypatch):
+    monkeypatch.setattr(
+        near_mod,
+        "model_settings",
+        SimpleNamespace(models={"near-model": {"attested_model": attested}}),
     )
 
 
@@ -391,6 +441,8 @@ def headed_keys_assert(ctx, headed_keys):
                 expected.append(fragment)
             elif fragment == "signing-keys/{signing_key}.json":
                 expected.append(f"signing-keys/{ctx['signing_key_hex']}.json")
+            elif fragment == "serving-log/{model}/{head}.json":
+                expected.append(ctx["serving_log_key"])
             else:
                 raise AssertionError(f"unknown headed-keys fragment: {fragment!r}")
     assert ctx.get("s3_heads", []) == expected
@@ -453,6 +505,7 @@ def digested_heads_assert(ctx):
     # also verified for this scenario.
     expected.add(f"{prefix}/abc123.json")
     expected.add(f"signing-keys/{ctx['signing_key_hex']}.json")
+    expected.add(_serving_log_key(ctx["fresh_att"]))
     assert heads == expected, (heads, expected)
 
 

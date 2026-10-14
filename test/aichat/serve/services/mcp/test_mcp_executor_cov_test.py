@@ -90,7 +90,7 @@ async def test_execute_mcp_tool_formats_registry_result():
 
     with (
         patch(
-            "aichat.serve.services.mcp.executor.tier_http_headers_for_model",
+            "aichat.serve.services.mcp.executor.mcp_context_headers_for_model",
             return_value={},
         ),
         patch("httpx.AsyncClient", return_value=_http_cm(response)),
@@ -130,7 +130,7 @@ async def test_execute_tool_http_non_200_sse_without_data(caplog):
     )
     with (
         patch(
-            "aichat.serve.services.mcp.executor.tier_http_headers_for_model",
+            "aichat.serve.services.mcp.executor.mcp_context_headers_for_model",
             return_value={},
         ),
         patch("httpx.AsyncClient", return_value=_http_cm(response)),
@@ -157,7 +157,7 @@ async def test_execute_tool_http_error_payload_raises():
     )
     with (
         patch(
-            "aichat.serve.services.mcp.executor.tier_http_headers_for_model",
+            "aichat.serve.services.mcp.executor.mcp_context_headers_for_model",
             return_value={},
         ),
         patch("httpx.AsyncClient", return_value=_http_cm(response)),

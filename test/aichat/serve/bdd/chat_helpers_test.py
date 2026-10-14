@@ -590,6 +590,11 @@ def then_streaming_research(name, ctx):
     assert calls[0].function_name == name, ctx["streaming_tool_kwargs"]
 
 
+@then("the streaming research handler did not run")
+def then_streaming_research_blocked(ctx):
+    assert ctx.get("streaming_tool_calls") is not True
+
+
 @then("the deep research capability metric sees the capability unused")
 def then_dr_metric_unused(ctx):
     recorded = ctx["dr_tracking"]
@@ -659,11 +664,33 @@ def given_dr_tracking(dr_tracking, ctx):
     ctx["dr_tracking"] = dr_tracking
 
 
+@given("deep research execution is monitored without advertising the tool")
+def given_dr_monitored_no_advertise(ctx, monkeypatch):
+    executor = MagicMock()
+    executor.is_mcp_tool = AsyncMock(return_value=False)
+
+    async def fake_streaming_tools(**kwargs):
+        ctx["streaming_tool_calls"] = True
+        ctx["streaming_tool_kwargs"] = kwargs
+        return
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(
+        open_ai_api, "handle_streaming_tool_calls", fake_streaming_tools
+    )
+    ctx["pipeline_executor"] = executor
+
+
 @given("deep research tool delegation is wired")
 def given_dr_delegation(ctx, monkeypatch, dr_tracking):
     # Both the capability metric and the streaming tool-call handler are
     # wired here so delegation scenarios do not depend on the tracking flag.
     ctx["dr_tracking"] = dr_tracking
+    from aichat.protocol.open_ai_protocol import Tool, ToolFunction
+
+    ctx["pipeline_advertised_tools"] = [
+        Tool(type="function", function=ToolFunction(name="deep_research"))
+    ]
     executor = MagicMock()
     executor.is_mcp_tool = AsyncMock(return_value=False)
 

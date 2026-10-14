@@ -9,7 +9,7 @@ Shares can be deleted before their 7-day expiry via `POST /v1/share/delete`, usi
 | Endpoint                   | Auth          | Description                                                                                                                        |
 | -------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /v1/share`           | `X-Brave-Key` | Accepts a base64-encoded ciphertext, stores it in S3, returns a UUID `share_id` and a UUID `deletion_id`. Rate-limited per IP.     |
-| `GET /v1/share/{share_id}` | None          | Returns the stored ciphertext for a given share ID.                                                                                |
+| `GET /v1/share/{share_id}` | None          | Returns the stored ciphertext for a given share ID. Rate-limited per IP.                                                           |
 | `POST /v1/share/delete`    | `X-Brave-Key` | Accepts a `deletion_id`, deletes the corresponding share. Returns `404` if the `deletion_id` doesn't resolve. Rate-limited per IP. |
 
 ## Configuration
@@ -21,6 +21,7 @@ Shares can be deleted before their 7-day expiry via `POST /v1/share/delete`, usi
 | `share_max_ciphertext_bytes`  | `1048576` | Maximum decoded ciphertext size in bytes (default 1 MB).                                                              |
 | `share_create` _(rate limit)_ | `10`      | Daily per-IP create limit. Configured in `rate_limiting_settings.rate_limits`.                                        |
 | `share_delete` _(rate limit)_ | `10`      | Daily per-IP delete limit. Configured in `rate_limiting_settings.rate_limits`.                                        |
+| `share_get` _(rate limit)_    | `100`     | Daily per-IP share retrieval limit. Configured in `rate_limiting_settings.rate_limits`.                               |
 
 The S3 bucket needs a lifecycle policy to expire objects after 7 days (covering both the `shares/*` and `deletions/*` prefixes), and an IAM policy granting the server `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` on those prefixes plus `s3:ListBucket` on the bucket so missing-object lookups return 404 rather than 403.
 

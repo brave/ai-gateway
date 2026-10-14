@@ -59,6 +59,8 @@ class ModelConfig:
     truncation_continuation: bool = False
     # Token amount tier sent to MCP servers: premium, freemium, or free.
     token_amount_tier: str = "free"
+    # MCP tool orchestration: assisted (full pipeline) or native (trust caller).
+    tool_orchestration: str = "assisted"
 
     def to_dict(self) -> dict:
         """Convert ModelConfig to dictionary for backward compatibility."""
@@ -141,6 +143,7 @@ def get_model_config(model_id: str) -> ModelConfig | None:
         e2ee_support=model_cfg.get("e2ee_support", False),
         truncation_continuation=bool(model_cfg.get("truncation_continuation")),
         token_amount_tier=model_cfg.get("token_amount_tier", "free"),
+        tool_orchestration=model_cfg.get("tool_orchestration", "assisted"),
     )
 
 

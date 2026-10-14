@@ -68,8 +68,10 @@ from aichat.serve.external_service_settings import external_service_settings
 from aichat.serve.mcp_integration import initialize_mcp_for_request
 from aichat.serve.mcp_tool_execution import (
     STREAMING_TOOLS,
+    advertised_tool_names,
     execute_tools_and_stream_events,
     handle_streaming_tool_calls,
+    may_run_streaming_tool,
     simplify_messages_for_llm,
     simplify_tool_message_for_llm,
 )
@@ -292,6 +294,17 @@ async def v1_chat_completions(
                 bool(await verify_and_get_ohttp_config(request.model))
             ).lower()
 
+        background_tasks.add_task(
+            send_analytics_request,
+            messages=[m.model_dump() for m in request.messages],
+            model=request.model,
+            androcles_probabilities=(
+                dynamic_leo_prefetch.last_user_androcles_probabilities
+                if dynamic_leo_prefetch
+                else None
+            ),
+        )
+
         return StreamingResponse(
             _stream_with_compaction(
                 request=request,
@@ -337,8 +350,13 @@ async def v1_chat_completions(
     # Send analytics request in the background
     background_tasks.add_task(
         send_analytics_request,
-        messages=messages,
+        messages=[m.model_dump() for m in request.messages],
         model=request.model,
+        androcles_probabilities=(
+            dynamic_leo_prefetch.last_user_androcles_probabilities
+            if dynamic_leo_prefetch
+            else None
+        ),
     )
 
     response = await backend.converse(messages, request.stream, params)
@@ -763,6 +781,7 @@ async def process_streaming_response(
         timeout=httpx.Timeout(connect=1.0, read=2.0, write=1.0, pool=1.0)
     )
     inline_search_helper = InlineSearchHelper(inline_search_client)
+    allowed_tool_names = advertised_tool_names(original_client_tools)
 
     try:
         pi_emitter = StreamingInjectionScanEmitter(injection_scan_task)
@@ -946,13 +965,22 @@ async def process_streaming_response(
             streaming_tool_calls = []
             client_tool_calls = []
             for tool_call in tool_calls_in_response:
-                if tool_call.function_name in STREAMING_TOOLS:
+                if (
+                    tool_call.function_name in STREAMING_TOOLS
+                    and may_run_streaming_tool(
+                        tool_call.function_name,
+                        allowed_tool_names,
+                        request.brave_capability,
+                    )
+                ):
                     streaming_tool_calls.append(tool_call)
                     if tool_call.function_name == "deep_research":
                         deep_research_triggered = True
                         DEEP_RESEARCH_CAPABILITY_TOTAL.labels(
                             request.model, "True", str(len(request.messages))
                         ).inc()
+                elif tool_call.function_name in STREAMING_TOOLS:
+                    client_tool_calls.append(tool_call)
                 elif await mcp_executor.is_mcp_tool(tool_call.function_name):
                     mcp_tool_calls.append(tool_call)
                 else:

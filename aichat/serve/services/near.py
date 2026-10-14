@@ -1,6 +1,8 @@
 import base64
+import hashlib
 import json
 import logging
+import re
 
 import boto3
 import httpx
@@ -27,10 +29,16 @@ class OHTTPAttestation(BaseModel):
 class ComposeAction(BaseModel):
     action: str
     image: str | None = None
+    commit: str | None = None
+    file: str | None = None
+    file_sha256: str | None = None
+    services: list[str] | None = None
+    timestamp: str | None = None
 
 
 # Normalised result returned by _fetch_attestation regardless of endpoint format.
 class AttestationDetails(BaseModel):
+    model_name: str
     gateway_app_compose: str | None = None
     compose_actions: list[ComposeAction]
     signing_keys: list[str]
@@ -52,6 +60,7 @@ class ComposeManagerAttestation(BaseModel):
 # Per-model attestation. Returned directly by the completions endpoint (old format,
 # direct compute connection) and nested under model_attestations on the cloud-api endpoint.
 class ModelAttestation(BaseModel):
+    model_name: str = Field(min_length=1)
     signing_address: str
     ohttp_attestation: OHTTPAttestation
     info: AttestationInfo
@@ -81,7 +90,15 @@ class OHTTPConfig(BaseModel):
 
 PRE_VERIFIED_PREFIX = "pre-verified"
 SIGNING_KEYS_PREFIX = "signing-keys"
+SERVING_COMPOSE_PREFIX = "serving-compose"
+SERVING_LOG_PREFIX = "serving-log"
+# How far back to look for a compose history the verifier has verified. The
+# verifier runs on a schedule, so the newest verified point is a few actions
+# back at most; past this the CVM has changed too much since its last check.
+SERVING_LOG_LOOKBACK = 20
 COMPOSE_MANAGER_STARTED_ACTION = "compose_manager_started"
+COMPOSE_UP_ACTION = "compose_up"
+COMPOSE_ACTIONS = (COMPOSE_UP_ACTION, "compose_down")
 TARGET_IMAGES = (
     "nearaidev/cloud-api",
     "nearaidev/cvm-ingress",
@@ -145,6 +162,65 @@ def _last_compose_manager_image(compose_actions: list[ComposeAction]) -> str | N
         return None
 
     return image.split("@sha256:")[1]
+
+
+def _compose_log_chain(compose_actions: list[ComposeAction]) -> list[str]:
+    """
+    Rolling sha256 over the compose_up/compose_down actions, one head per
+    action. Must match compose_log_chain in near-tee-verifier
+    (verifier/verifications/compose_manager.py), which writes the
+    serving-log markers this is checked against.
+    """
+    head, chain = "", []
+    for action in compose_actions:
+        if action.action not in COMPOSE_ACTIONS:
+            continue
+        line = "|".join(
+            [
+                action.action,
+                action.file or "",
+                action.commit or "",
+                action.file_sha256 or "",
+                ",".join(action.services or []),
+                action.timestamp or "",
+            ]
+        )
+        head = hashlib.sha256(f"{head}\n{line}".encode()).hexdigest()
+        chain.append(head)
+    return chain
+
+
+def _serving_composes_approved(s3_client, attestation: AttestationDetails) -> bool:
+    """
+    Confirms the CVM serves only weights the verifier approved. The verifier
+    replays the whole actions log and records the compose history it verified
+    (serving-log). Find the newest such point in the live log, then require
+    every compose_up after it to load a compose file the verifier approved
+    (serving-compose), since any of them may have changed the model weights.
+    """
+    model = attestation.model_name
+    compose_actions = [
+        a for a in attestation.compose_actions if a.action in COMPOSE_ACTIONS
+    ]
+    chain = _compose_log_chain(compose_actions)
+    verified_at = None
+    for k in range(len(chain), max(len(chain) - SERVING_LOG_LOOKBACK, 0), -1):
+        if _head_s3(s3_client, SERVING_LOG_PREFIX, f"{model}/{chain[k - 1]}"):
+            verified_at = k
+            break
+    if verified_at is None:
+        logger.warning(f"No verified compose history for {model}")
+        return False
+    for action in compose_actions[verified_at:]:
+        if action.action != COMPOSE_UP_ACTION:
+            continue
+        sha256 = (action.file_sha256 or "").lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", sha256) or not _head_s3(
+            s3_client, SERVING_COMPOSE_PREFIX, f"{model}/{sha256}"
+        ):
+            logger.warning(f"Unapproved compose {action.file} deployed for {model}")
+            return False
+    return True
 
 
 def _verify_ohttp_signature(ohttp_attestation: OHTTPAttestation) -> bool:
@@ -211,7 +287,19 @@ def _verify_attestation(attestation: AttestationDetails, model_name: str) -> boo
             logger.warning(f"Signing key not registered for {model_name}")
             return False
 
-    return True
+    # Step 6: NEAR serves the model we configured, not another one it routes
+    # our upstream_model alias to.
+    expected = model_settings.models.get(model_name, {}).get("attested_model")
+    if not expected or attestation.model_name != expected:
+        logger.warning(
+            f"Attested model {attestation.model_name!r} is not the configured "
+            f"attested_model {expected!r} for {model_name}"
+        )
+        return False
+
+    # Step 7: the model weights are ones the verifier approved. They are
+    # pinned in the compose files, so new weights mean a new compose file.
+    return _serving_composes_approved(s3_client, attestation)
 
 
 def _extract_target_digests(app_compose: str | None) -> dict[str, str]:
@@ -295,6 +383,7 @@ async def _fetch_attestation(model_name: str) -> AttestationDetails:
         model_attestation = parsed.model_attestations[0]
         gateway = parsed.gateway_attestation
         return AttestationDetails(
+            model_name=model_attestation.model_name,
             gateway_app_compose=gateway.info.tcb_info.app_compose,
             compose_actions=model_attestation.compose_manager_attestation.actions,
             signing_keys=[gateway.signing_address, model_attestation.signing_address],
@@ -303,6 +392,7 @@ async def _fetch_attestation(model_name: str) -> AttestationDetails:
     else:
         parsed = ModelAttestation.model_validate(data)
         return AttestationDetails(
+            model_name=parsed.model_name,
             gateway_app_compose=None,
             compose_actions=parsed.compose_manager_attestation.actions,
             signing_keys=[parsed.signing_address],
