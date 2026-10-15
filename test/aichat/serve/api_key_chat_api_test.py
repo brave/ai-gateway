@@ -1,11 +1,13 @@
 """Tests for api_key_chat_api."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import Request
 
 from aichat.serve import api_key_chat_api
+from aichat.serve.services import api_key_usage
 
 
 def test_openai_error_response_shape():
@@ -225,7 +227,9 @@ class TestStreamChunks:
 
         out = [
             chunk_out
-            async for chunk_out in api_key_chat_api._stream_chunks(gen(), "test-model")
+            async for chunk_out in api_key_chat_api._stream_completion_chunks(
+                gen(), "test-model"
+            )
         ]
         assert out[-1] == "data: [DONE]\n\n"
         assert out[0] == 'data: {"id": "1"}\n\n'
@@ -241,6 +245,32 @@ class TestStreamChunks:
 
         out = [
             chunk_out
-            async for chunk_out in api_key_chat_api._stream_chunks(gen(), "test-model")
+            async for chunk_out in api_key_chat_api._stream_completion_chunks(
+                gen(), "test-model"
+            )
         ]
         assert out == ["data: [DONE]\n\n"]
+
+    @pytest.mark.asyncio
+    async def test_upstream_error_still_settles(self, monkeypatch):
+        usage_ctx = api_key_usage.UsageContext(
+            httpx_client=MagicMock(),
+            api_key="k",
+            transaction_id="txn_1",
+            model="test-model",
+            provider="bedrock",
+        )
+        settle = AsyncMock()
+        monkeypatch.setattr(api_key_usage, "settle_usage", settle)
+
+        async def gen():
+            raise RuntimeError("upstream failed")
+            yield
+
+        with pytest.raises(RuntimeError):
+            async for _ in api_key_chat_api._stream_completion_chunks(
+                gen(), "test-model", usage_ctx
+            ):
+                pass
+        await asyncio.gather(*list(api_key_usage._background_tasks))
+        settle.assert_awaited_once_with(usage_ctx, None)

@@ -15,6 +15,17 @@ _REAL_SKU_VERIFY = internal_client.sku_verify
 _REAL_SALTS = internal_client.rate_limit_salts
 _REAL_RATE_LIMIT_CHECK = internal_client.rate_limit_check
 _REAL_API_KEY_VERIFY = internal_client.api_key_verify
+_REAL_USAGE_SETTLE = internal_client.usage_settle
+
+_USAGE = {
+    "model": "test-model",
+    "provider": "bedrock",
+    "prompt_tokens": 13,
+    "completion_tokens": 12,
+    "cache_write_tokens": 3,
+    "cache_read_tokens": 4,
+    "reasoning_tokens": 5,
+}
 
 FEATURE = "features/internal_client.feature"
 
@@ -133,6 +144,22 @@ def _(ctx, api_key):
     return asyncio.run(_REAL_API_KEY_VERIFY(make_client(ctx), api_key))
 
 
+@when(
+    parsers.parse('usage settle is sent for transaction "{transaction_id}"'),
+    target_fixture="result",
+)
+def _(ctx, transaction_id):
+    ctx["transaction_id"] = transaction_id
+    return asyncio.run(
+        _REAL_USAGE_SETTLE(
+            make_client(ctx),
+            api_key="sk_test_k1_s1_abcdefgh",
+            transaction_id=transaction_id,
+            **_USAGE,
+        )
+    )
+
+
 @when("rate limit salts are requested", target_fixture="result")
 def _(ctx):
     return asyncio.run(_REAL_SALTS(make_client(ctx)))
@@ -198,6 +225,22 @@ def _(ctx):
 @then("the api key verdict succeeded on the second attempt")
 def _(ctx, result):
     assert ctx["attempts"] == 2
+    assert result == {"ok": True, "current": "c"}
+
+
+@then("the usage settle payload carried the key and token counts")
+def _(ctx):
+    assert ctx["requests"][-1]["body"] == {
+        "api_key": "sk_test_k1_s1_abcdefgh",
+        "transaction_id": ctx["transaction_id"],
+        **_USAGE,
+    }
+
+
+@then("the usage settle succeeded on the second attempt")
+def _(ctx, result):
+    assert ctx["attempts"] == 2
+    assert len(ctx["requests"]) == 1
     assert result == {"ok": True, "current": "c"}
 
 

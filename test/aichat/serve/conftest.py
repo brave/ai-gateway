@@ -41,6 +41,7 @@ def _mock_internal_auth(monkeypatch):
         },
         "rate_limit_automatic_mode_check": {"allowed": True, "count": 1},
         "api_key_verify": {"allowed": True},
+        "usage_settle": {},
     }
     for name, payload in permissive.items():
 

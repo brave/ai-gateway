@@ -57,6 +57,7 @@ from aichat.serve.ohttp import v1_router as ohttp_router_v1
 from aichat.serve.open_ai_api import v1_router as open_ai_router_v1
 from aichat.serve.passthrough_api import v1_router as passthrough_router_v1
 from aichat.serve.server_settings import check_log_level, server_settings
+from aichat.serve.services import api_key_usage
 from aichat.serve.services.backend import initialize_backends
 from aichat.serve.services.security_settings import check_internal_models_api_key
 from aichat.serve.share_api import v1_router as share_router_v1
@@ -117,6 +118,9 @@ async def lifespan(app: FastAPI):
         try:
             yield {"httpx_client": client}
         finally:
+            await api_key_usage.wait_for_background_tasks(
+                api_key_usage.USAGE_SHUTDOWN_TIMEOUT_SECONDS
+            )
             await shutdown_shared_mcp_client(mcp_warmed)
             await shutdown_media_client()
 
