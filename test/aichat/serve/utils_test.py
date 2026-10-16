@@ -7,6 +7,7 @@ from aichat.serve.services.conversation_title import (
     last_message_includes_conversation_title,
 )
 from aichat.serve.utils import (
+    extract_waf_signals,
     generate_static_content_generator,
     parse_last_user_input,
     static_content_generator,
@@ -249,3 +250,36 @@ def test_last_message_includes_conversation_title_false_other_part():
             )
         ]
     )
+
+
+def test_extract_waf_signals_keeps_only_prefixed_headers():
+    headers = {
+        "x-amzn-waf-alpha": "one",
+        "user-agent": "agent",
+        "x-forwarded-for": "1.2.3.4",
+    }
+    assert extract_waf_signals(headers) == {"alpha": "one"}
+
+
+def test_extract_waf_signals_is_case_insensitive_on_names():
+    assert extract_waf_signals({"X-Amzn-WAF-Alpha": "one"}) == {"alpha": "one"}
+
+
+def test_extract_waf_signals_skips_empty_values_and_bare_prefix():
+    headers = {"x-amzn-waf-empty": "", "x-amzn-waf-": "bare"}
+    assert extract_waf_signals(headers) == {}
+
+
+def test_extract_waf_signals_returns_empty_without_matches():
+    assert extract_waf_signals({"user-agent": "agent"}) == {}
+    assert extract_waf_signals({}) == {}
+
+
+def test_extract_waf_signals_truncates_long_values():
+    signals = extract_waf_signals({"x-amzn-waf-alpha": "v" * 1000})
+    assert signals == {"alpha": "v" * 256}
+
+
+def test_extract_waf_signals_caps_entry_count():
+    headers = {f"x-amzn-waf-h{i}": "v" for i in range(100)}
+    assert len(extract_waf_signals(headers)) == 32
