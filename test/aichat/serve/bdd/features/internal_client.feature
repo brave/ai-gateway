@@ -30,6 +30,26 @@ Feature: aichat-internal HTTP client
     When api key verify is sent with key "sk_test_k1_s1_abcdefgh"
     Then the verdict request returns nothing
 
+  Scenario: Usage settle posts token counts to /1/usage/settle
+    When usage settle is sent for transaction "txn_1"
+    Then aichat-internal received a POST to "/1/usage/settle"
+    And the usage settle payload carried the key and token counts
+
+  Scenario: Usage settle is retried after a broken response
+    Given aichat-internal breaks the first response
+    When usage settle is sent for transaction "txn_1"
+    Then the usage settle succeeded on the second attempt
+
+  Scenario: Usage settle is retried after a protocol error
+    Given aichat-internal aborts the first response with a protocol error
+    When usage settle is sent for transaction "txn_1"
+    Then the usage settle succeeded on the second attempt
+
+  Scenario: Usage settle returns nothing when aichat-internal is unavailable
+    Given aichat-internal answers 503
+    When usage settle is sent for transaction "txn_1"
+    Then the verdict request returns nothing
+
   Scenario: Rate limit salts are fetched from /1/rate_limit_salts
     When rate limit salts are requested
     Then aichat-internal received a GET to "/1/rate_limit_salts"

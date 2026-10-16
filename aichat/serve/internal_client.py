@@ -79,6 +79,37 @@ async def api_key_verify(
     )
 
 
+async def usage_settle(
+    client: httpx.AsyncClient,
+    *,
+    api_key: str,
+    transaction_id: str,
+    model: str,
+    provider: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    cache_write_tokens: int,
+    cache_read_tokens: int,
+    reasoning_tokens: int,
+) -> dict[str, Any] | None:
+    return await _post(
+        client,
+        "/1/usage/settle",
+        {
+            "api_key": api_key,
+            "transaction_id": transaction_id,
+            "model": model,
+            "provider": provider,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "cache_write_tokens": cache_write_tokens,
+            "cache_read_tokens": cache_read_tokens,
+            "reasoning_tokens": reasoning_tokens,
+        },
+        idempotent=True,
+    )
+
+
 async def rate_limit_salts(client: httpx.AsyncClient) -> dict[str, Any] | None:
     return await _get(client, "/1/rate_limit_salts", idempotent=True)
 
