@@ -14,6 +14,7 @@ from aichat.serve.backend.litellm import (
     get_global_router,
     merge_model_extra_body,
 )
+from aichat.serve.services.bedrock_settings import bedrock_settings
 from aichat.serve.services.models import ModelConfig
 
 
@@ -862,6 +863,27 @@ class TestBuildRouterEntry:
                 result["litellm_params"]["model"] == "bedrock/converse/my-profile-value"
             )
             assert result["litellm_params"]["api_base"] == "https://api.example.com"
+
+    @patch("aichat.serve.backend.litellm.model_settings")
+    def test_build_router_entry_applies_guardrail_to_bedrock_only(
+        self, mock_settings, monkeypatch
+    ):
+        monkeypatch.setattr(bedrock_settings, "bedrock_guardrail_id", "gr123")
+        monkeypatch.setattr(bedrock_settings, "bedrock_guardrail_version", "1")
+        monkeypatch.setenv("TEST_PROFILE", "my-profile-value")
+        mock_settings.models = {
+            "bedrock-model": {
+                "upstream_model": "u",
+                "inference_profile": "TEST_PROFILE",
+            },
+            "vllm-model": {"upstream_model": "u", "address": "https://x.example.com"},
+        }
+
+        bedrock_params = _build_router_entry("bedrock-model")["litellm_params"]
+        vllm_params = _build_router_entry("vllm-model")["litellm_params"]
+
+        assert bedrock_params["guardrailConfig"]["guardrailIdentifier"] == "gr123"
+        assert "guardrailConfig" not in vllm_params
 
     @patch("aichat.serve.backend.litellm.model_settings")
     def test_build_router_entry_with_near_ai(self, mock_settings):
