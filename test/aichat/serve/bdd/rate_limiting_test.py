@@ -63,12 +63,15 @@ def _clear_salt_cache():
     rate_limiting._internal_salt_cache.clear()
 
 
-def make_request(query_params: dict | None = None) -> mock.Mock:
+def make_request(
+    query_params: dict | None = None, headers: dict | None = None
+) -> mock.Mock:
     request = mock.Mock()
     # SimpleNamespace so missing attributes raise AttributeError like a real
     # Request.state instead of returning truthy Mocks.
     request.state = SimpleNamespace(httpx_client=mock.Mock())
     request.query_params = query_params or {}
+    request.headers = headers or {}
     return request
 
 
@@ -264,6 +267,28 @@ def _(ctx):
     return asyncio.run(check_rate_limit(request, "m", False, "1.2.3.4"))
 
 
+@when("a rate limit is checked with WAF headers", target_fixture="verdict")
+def _(ctx):
+    request = make_request(
+        headers={
+            "x-amzn-waf-alpha": "one",
+            "X-Amzn-WAF-Beta": "two",
+            "x-amzn-waf-empty": "",
+            "x-amzn-waf-": "bare",
+            "user-agent": "test-agent",
+            "x-forwarded-for": "1.2.3.4",
+        }
+    )
+    return asyncio.run(check_rate_limit(request, "m", False, "1.2.3.4"))
+
+
+@when("a rate limit is checked with many WAF headers", target_fixture="verdict")
+def _(ctx):
+    headers = {f"x-amzn-waf-h{i}": "v" * 1000 for i in range(100)}
+    request = make_request(headers=headers)
+    return asyncio.run(check_rate_limit(request, "m", False, "1.2.3.4"))
+
+
 @when(
     "a rate limit is checked from a premium host without a credential",
     target_fixture="verdict",
@@ -310,6 +335,23 @@ def _(ctx):
     assert call["maximum_requests"] == 10
     assert call["interval_in_seconds"] == 60
     assert call["is_free_model"] is True
+
+
+@then("the rate limit payload carried only the prefixed WAF headers")
+def _(ctx):
+    assert ctx["last_call"]["waf_signals"] == {"alpha": "one", "beta": "two"}
+
+
+@then("the rate limit payload carried no WAF signals")
+def _(ctx):
+    assert ctx["last_call"]["waf_signals"] == {}
+
+
+@then("the rate limit payload carried a bounded set of WAF signals")
+def _(ctx):
+    signals = ctx["last_call"]["waf_signals"]
+    assert 0 < len(signals) <= 32
+    assert all(len(value) <= 256 for value in signals.values())
 
 
 @then("the premium bucket was queried with no local cap")

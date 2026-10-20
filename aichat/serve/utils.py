@@ -199,6 +199,26 @@ def get_real_ip(x_forwarded_for: str) -> str:
     return x_forwarded_for.split(",")[-1].strip() if x_forwarded_for else "UNKNOWN"
 
 
+_WAF_SIGNAL_PREFIX = "x-amzn-waf-"
+_WAF_SIGNAL_MAX_ENTRIES = 32
+_WAF_SIGNAL_MAX_VALUE_LENGTH = 256
+
+
+def extract_waf_signals(headers: Any) -> dict[str, str]:
+    signals: dict[str, str] = {}
+    for name, value in headers.items():
+        lowered = name.lower()
+        if not lowered.startswith(_WAF_SIGNAL_PREFIX) or not value:
+            continue
+        key = lowered[len(_WAF_SIGNAL_PREFIX) :]
+        if not key:
+            continue
+        signals[key] = value[:_WAF_SIGNAL_MAX_VALUE_LENGTH]
+        if len(signals) >= _WAF_SIGNAL_MAX_ENTRIES:
+            break
+    return signals
+
+
 def get_rate_limiting_key(model: str, rate_key: str, interval_in_seconds: int):
     return f"{model}:{rate_key}:{int(time.time() // interval_in_seconds)}"
 
