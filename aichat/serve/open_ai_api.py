@@ -204,6 +204,12 @@ async def v1_chat_completions(
 
     raw_request.state.capability = request.brave_capability
 
+    if is_conversation_title_request:
+        title_model = model_settings.model_triaging.get("conversation_title")
+        if title_model:
+            common["model"] = title_model
+            common["is_automatic_model_request"] = False
+
     error_check_ret = await check_requests_common(raw_request, common)
     if error_check_ret:
         return error_check_ret
