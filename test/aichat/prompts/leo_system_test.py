@@ -313,4 +313,5 @@ def test_leo_system_without_workspaces_omits_directive():
     actual_messages = leo_system.augment(messages, now=TEST_DATETIME)
     content = actual_messages[0]["content"]
     assert "Workspace viewers" not in content
+    assert "Workspace files" not in content
     assert "{{workspaces_directive}}" not in content

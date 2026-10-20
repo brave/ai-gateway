@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 
@@ -19,6 +20,7 @@ from aichat.serve.common_api import extract_bearer_token
 from aichat.serve.internal_settings import internal_settings
 from aichat.serve.open_ai_api import detect_media_content, get_last_user_message_content
 from aichat.serve.server_settings import server_settings
+from aichat.serve.services import api_key_usage
 from aichat.serve.services.backend import get_backend
 from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
 from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
@@ -113,14 +115,44 @@ async def authorize_api_key(request: Request, api_key: str) -> JSONResponse | No
     return None
 
 
-async def _stream_chunks(response: AsyncIterator, model: str) -> AsyncIterator[str]:
-    async for chunk in response:
-        try:
-            chunk.model = model
-            yield f"data: {chunk.model_dump_json()}\n\n"
-        except Exception as e:
-            logger.warning(f"Failed to serialize chunk: {e}")
-    yield "data: [DONE]\n\n"
+# Streams the completion chunks of the response to the client.
+# If usage is requested, it will be settled in the background after the
+# response is delivered. If usage is not requested, it will be settled in the
+# background after the response is delivered.
+async def _stream_completion_chunks(
+    response: AsyncIterator,
+    model: str,
+    usage_ctx: api_key_usage.UsageContext | None = None,
+    include_usage: bool = True,
+) -> AsyncIterator[str]:
+    chunks: asyncio.Queue = asyncio.Queue(maxsize=api_key_usage.STREAM_BUFFER_SIZE)
+    disconnected = asyncio.Event()
+    reader = api_key_usage.spawn(
+        api_key_usage.read_stream_and_settle(response, chunks, disconnected, usage_ctx)
+    )
+    try:
+        while True:
+            chunk = await chunks.get()
+            if chunk is api_key_usage.STREAM_END:
+                break
+            if isinstance(chunk, Exception):
+                raise chunk
+            if getattr(chunk, "usage", None) is not None and not include_usage:
+                if not chunk.choices:
+                    continue
+                chunk.usage = None
+            try:
+                chunk.model = model
+                yield f"data: {chunk.model_dump_json()}\n\n"
+            except Exception as e:
+                logger.warning(f"Failed to serialize chunk: {e}")
+        yield "data: [DONE]\n\n"
+    finally:
+        disconnected.set()
+        while not chunks.empty():
+            chunks.get_nowait()
+        if usage_ctx is None:
+            reader.cancel()
 
 
 @v1_router.post("/chat/completions", response_model=None)
@@ -131,10 +163,10 @@ async def chat_completions(request: Request):
     error = await authorize_api_key(request, api_key)
     if error is not None:
         return error
-    return await handle_chat_completions(request)
+    return await handle_chat_completions(request, api_key)
 
 
-async def handle_chat_completions(request: Request):
+async def handle_chat_completions(request: Request, api_key: str | None = None):
     logger.debug("api_key_chat_api.py /chat/completions")
     try:
         body = await request.json()
@@ -193,9 +225,31 @@ async def handle_chat_completions(request: Request):
             if key not in extra_params:
                 params.pop(key, None)
         params.update(extra_params)
+        include_usage = bool(
+            (extra_params.get("stream_options") or {}).get("include_usage")
+        )
+        if stream:
+            params["stream_options"] = {
+                **(params.get("stream_options") or {}),
+                "include_usage": True,
+            }
         apply_claude_upstream_sampling_params(backend.config.upstream_model, params)
 
-        response = await backend.converse(messages, stream=stream, params=params)
+        usage_ctx = None
+        if api_key is not None and internal_settings.internal_api_enabled:
+            usage_ctx = api_key_usage.new_usage_context(
+                request.state.httpx_client, api_key, model, backend.config
+            )
+
+        converse = backend.converse(messages, stream=stream, params=params)
+        if stream:
+            response = await converse
+        else:
+            response = await asyncio.shield(
+                api_key_usage.spawn(
+                    api_key_usage.converse_and_settle(converse, usage_ctx)
+                )
+            )
     except Exception:
         logger.exception("API-key chat completion failed")
         return openai_error_response(500, "Internal server error.", "internal_error")
@@ -209,7 +263,8 @@ async def handle_chat_completions(request: Request):
 
     if stream:
         return StreamingResponse(
-            _stream_chunks(response, model), media_type="text/event-stream"
+            _stream_completion_chunks(response, model, usage_ctx, include_usage),
+            media_type="text/event-stream",
         )
     response.model = model
     return JSONResponse(content=response.model_dump())

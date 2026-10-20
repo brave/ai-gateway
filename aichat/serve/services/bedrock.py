@@ -69,6 +69,23 @@ def sanitize_tool_name_for_bedrock(tool_name: str | None) -> str | None:
     return _enforce_bedrock_max_length(sanitized)
 
 
+def get_bedrock_guardrail_params(litellm_model: str) -> dict:
+    guardrail_id = bedrock_settings.bedrock_guardrail_id
+    guardrail_version = bedrock_settings.bedrock_guardrail_version
+    if not guardrail_id or not guardrail_version:
+        return {}
+    if litellm_model.startswith("bedrock/"):
+        return {
+            "guardrailConfig": {
+                "guardrailIdentifier": guardrail_id,
+                "guardrailVersion": guardrail_version,
+                "trace": "disabled",
+                "streamProcessingMode": bedrock_settings.bedrock_guardrail_stream_mode,
+            }
+        }
+    return {}
+
+
 def completion_content_for_finish_reason(
     finish_reason: str | None, content: str | None
 ) -> str | None:

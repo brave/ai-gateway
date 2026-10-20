@@ -192,3 +192,17 @@ INTERNAL_REQUEST_RETRY_TOTAL = Counter(
     labelnames=("path", "outcome"),
     registry=REGISTRY,
 )
+
+API_KEY_USAGE_SETTLE_TOTAL = Counter(
+    name="api_key_usage_settle_total",
+    documentation="API-key chat completion usage settle attempts, by outcome",
+    labelnames=("outcome",),
+    registry=REGISTRY,
+)
+
+API_KEY_USAGE_TOKENS_TOTAL = Counter(
+    name="api_key_usage_tokens_total",
+    documentation="Tokens reported for API-key chat completions, by model and token type",
+    labelnames=("model", "token_type"),
+    registry=REGISTRY,
+)

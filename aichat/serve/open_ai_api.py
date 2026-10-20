@@ -833,10 +833,14 @@ async def process_streaming_response(
                     # When the model returns content_filter (e.g. Bedrock safety filter),
                     # emit a chunk with a user-facing message instead of empty/truncated content.
                     if stop_reason == "content_filter":
-                        chunk = create_content_chunk(chunk, CONTENT_FILTER_MESSAGE)
+                        already_streamed = bool(assistant_content_accumulator.strip())
+                        chunk = create_content_chunk(
+                            chunk, "" if already_streamed else CONTENT_FILTER_MESSAGE
+                        )
                         if chunk and chunk.choices:
                             chunk.choices[0].finish_reason = "content_filter"
-                        assistant_content_accumulator = CONTENT_FILTER_MESSAGE
+                        if not already_streamed:
+                            assistant_content_accumulator = CONTENT_FILTER_MESSAGE
                     else:
                         # Accumulate assistant content for alignment checking
                         if (

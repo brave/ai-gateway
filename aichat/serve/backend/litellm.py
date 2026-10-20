@@ -26,6 +26,7 @@ from aichat.serve.services.bedrock import (
     add_cache_control_to_tools,
     filter_tool_call_result_pairing,
     format_tools_for_bedrock,
+    get_bedrock_guardrail_params,
     get_cache_control_injection_points,
     map_tool_role_to_assistant,
     split_assistant_content_with_tool_calls,
@@ -423,6 +424,8 @@ def _build_router_entry(
         for field in passthrough_fields:
             if field in model_config:
                 litellm_params[field] = model_config[field]
+
+        litellm_params.update(get_bedrock_guardrail_params(litellm_model))
 
         if (
             deployment_pool_settings.deployment_pools_enabled

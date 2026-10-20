@@ -10,6 +10,7 @@ from aichat.serve.services.bedrock import (
     completion_content_for_finish_reason,
     filter_tool_call_result_pairing,
     format_tools_for_bedrock,
+    get_bedrock_guardrail_params,
     get_cache_control_injection_points,
     get_prefix_cache_indices,
     map_tool_role_to_assistant,
@@ -1253,3 +1254,35 @@ class TestFormatToolsForBedrockSanitizesNames:
         result = format_tools_for_bedrock(tools)
 
         assert len(result[0]["function"]["name"]) == 64
+
+
+class TestGetBedrockGuardrailParams:
+    @pytest.fixture
+    def configured(self, monkeypatch):
+        monkeypatch.setattr(bedrock_settings, "bedrock_guardrail_id", "gr123")
+        monkeypatch.setattr(bedrock_settings, "bedrock_guardrail_version", "1")
+        monkeypatch.setattr(bedrock_settings, "bedrock_guardrail_stream_mode", "sync")
+
+    def test_bedrock_model_gets_guardrail_config(self, configured):
+        assert get_bedrock_guardrail_params("bedrock/converse/profile") == {
+            "guardrailConfig": {
+                "guardrailIdentifier": "gr123",
+                "guardrailVersion": "1",
+                "trace": "disabled",
+                "streamProcessingMode": "sync",
+            }
+        }
+
+    @pytest.mark.parametrize(
+        "litellm_model",
+        ["hosted_vllm/llama", "bedrock_mantle/kimi", "openai/openai.gpt-5.5"],
+    )
+    def test_non_converse_models_get_nothing(self, configured, litellm_model):
+        assert get_bedrock_guardrail_params(litellm_model) == {}
+
+    @pytest.mark.parametrize(
+        "missing", ["bedrock_guardrail_id", "bedrock_guardrail_version"]
+    )
+    def test_requires_id_and_version(self, configured, monkeypatch, missing):
+        monkeypatch.setattr(bedrock_settings, missing, None)
+        assert get_bedrock_guardrail_params("bedrock/converse/profile") == {}
