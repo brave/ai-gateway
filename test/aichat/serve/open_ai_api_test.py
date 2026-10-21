@@ -284,6 +284,56 @@ class TestV1ChatCompletions:
         mock_complete_title.assert_not_awaited()
         assert result is gate_response
 
+    @patch("aichat.serve.open_ai_api.maybe_trim_messages", return_value=([], 1, 0))
+    @patch("aichat.serve.open_ai_api.get_model_config")
+    @patch("aichat.serve.open_ai_api.model_settings")
+    @patch("aichat.serve.open_ai_api.complete_conversation_title_chat")
+    @patch("aichat.serve.open_ai_api.check_requests_common")
+    @pytest.mark.asyncio
+    async def test_v1_chat_completions_conversation_title_resolves_model_before_common_gate(
+        self,
+        mock_check_requests,
+        mock_complete_title,
+        mock_model_settings,
+        mock_get_model_config,
+        _mock_trim,
+        mock_request,
+        mock_background_tasks,
+        mock_fastapi_response,
+    ):
+        mock_check_requests.return_value = None
+        mock_complete_title.return_value = {"ok": True}
+        mock_model_settings.model_triaging = {"conversation_title": "caracal"}
+        mock_get_model_config.return_value = MagicMock()
+
+        common = {
+            "model": "automatic",
+            "is_automatic_model_request": True,
+            "is_premium_host": False,
+            "has_valid_premium_credential": False,
+        }
+        title_request = OpenAIRequest(
+            model="automatic",
+            messages=[
+                UserMessage(
+                    content=[{"type": "brave-conversation-title", "text": "My chat"}]
+                )
+            ],
+            stream=False,
+        )
+
+        await v1_chat_completions(
+            raw_request=mock_request,
+            request=title_request,
+            background_tasks=mock_background_tasks,
+            fastapi_response=mock_fastapi_response,
+            common=common,
+        )
+
+        assert common["model"] == "caracal"
+        assert common["is_automatic_model_request"] is False
+        mock_check_requests.assert_awaited_once_with(mock_request, common)
+
     @patch("aichat.serve.open_ai_api.mcp_settings")
     @patch("aichat.serve.open_ai_api.check_requests_common")
     @patch("aichat.serve.open_ai_api.get_backend")
