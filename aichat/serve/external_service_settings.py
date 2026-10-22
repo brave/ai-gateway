@@ -6,6 +6,7 @@ class ExternalServiceSettings(BaseSettings):
     near_api_key: str = ""
     near_bucket_name: str = ""
     near_bucket_region: str = ""
+    verify_near_compose_sequence: bool = False
     analytics_enabled: bool = False
     analytics_model_address: str = ""
     bedrock_retry_delay_seconds: float = 2.0
