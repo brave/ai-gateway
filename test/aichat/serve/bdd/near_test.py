@@ -87,6 +87,9 @@ def near_harness(ctx, monkeypatch):
     monkeypatch.setattr(near_mod.aioredis, "Redis", lambda *a, **k: ctx["redis"])
     monkeypatch.setattr(near_mod, "get_pool", lambda: object())
     monkeypatch.setattr(
+        near_mod.external_service_settings, "verify_near_compose_sequence", True
+    )
+    monkeypatch.setattr(
         near_mod,
         "model_settings",
         SimpleNamespace(models={"near-model": {"attested_model": ATTESTED_MODEL}}),
@@ -398,6 +401,13 @@ def attestation_s3_state(ctx, s3_state):
         "missing": "404",
         "all but the serving log": "no-serving-log",
     }[s3_state]
+
+
+@given("compose sequence verification is disabled")
+def compose_sequence_disabled(monkeypatch):
+    monkeypatch.setattr(
+        near_mod.external_service_settings, "verify_near_compose_sequence", False
+    )
 
 
 @when("the attestation is verified")
