@@ -299,6 +299,8 @@ def _verify_attestation(attestation: AttestationDetails, model_name: str) -> boo
 
     # Step 7: the model weights are ones the verifier approved. They are
     # pinned in the compose files, so new weights mean a new compose file.
+    if not external_service_settings.verify_near_compose_sequence:
+        return True
     return _serving_composes_approved(s3_client, attestation)
 
 

@@ -15,6 +15,10 @@ class SecuritySettings(BaseSettings):
     alignment_truncation_char_limit: int = 1000
     prompt_injection_scanning_enabled: bool = True
     prompt_injection_scanning_model: str = "llama-4-maverick"
+    shadow_prompt_injection_study_enabled: bool = False
+    shadow_prompt_injection_context_limit: int = 16384
+    shadow_prompt_injection_scan_sample_rate: float = 0.0
+    shadow_ml_injection_classifier_timeout_seconds: float = 5.0
     allowed_bypass_tools: dict[str, list[str]] = {
         "alignment_check_bypass": [
             "user_choice_tool",

@@ -239,6 +239,9 @@ def fake_s3(monkeypatch, reset_models):
     """Installs a fake S3 client. Mutate `.missing` to simulate 404s."""
     client = _FakeS3Client()
     monkeypatch.setattr(near.boto3, "client", lambda *a, **k: client)
+    monkeypatch.setattr(
+        near.external_service_settings, "verify_near_compose_sequence", True
+    )
     reset_models["m"] = {"attested_model": "org/model"}
     return client
 
