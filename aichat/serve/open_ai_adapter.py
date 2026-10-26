@@ -11,6 +11,7 @@ This module provides OpenAI API-specific functionality including:
 import asyncio
 import json
 import logging
+import random
 from collections.abc import AsyncIterator
 from typing import Any, get_args
 
@@ -27,9 +28,11 @@ from aichat.protocol.open_ai_protocol import (
     TextContentPart,
     ToolMessage,
     UserMemoryContentPart,
+    UserMessage,
     has_capability,
 )
 from aichat.responses import CompactionMetadata, PromptInjectionScanResult, SecurityScan
+from aichat.serve.ml_injection_classifier import shadow_ml_injection_classifier_scan
 from aichat.serve.services.security_settings import security_settings
 from aichat.serve.tool_parser import AlignmentCheckData
 from aichat.services.alignment_check_service import (
@@ -770,6 +773,41 @@ def extract_latest_tool_call_results(
     return "\n---\n".join(tool_parts)
 
 
+def _brave_page_texts_from_message(message: UserMessage) -> list[str]:
+    content = message.content
+    if not isinstance(content, list):
+        return []
+    texts: list[str] = []
+    for part in content:
+        if getattr(part, "type", None) != "brave-page-text":
+            continue
+        text = getattr(part, "text", None) or ""
+        if text.strip():
+            texts.append(text)
+    return texts
+
+
+def _schedule_shadow_page_prompt_injection_scan(messages: list[MessageUnion]) -> None:
+    if not messages:
+        return
+    last = messages[-1]
+    if not isinstance(last, UserMessage):
+        return
+    page_texts = _brave_page_texts_from_message(last)
+    if not page_texts:
+        return
+    if random.random() >= security_settings.shadow_prompt_injection_scan_sample_rate:
+        return
+
+    async def _run() -> None:
+        try:
+            await shadow_ml_injection_classifier_scan(page_texts)
+        except Exception:  # noqa: S110 — shadow scan must not propagate
+            pass
+
+    asyncio.create_task(_run())
+
+
 def maybe_perform_prompt_injection_scan(
     messages: list[MessageUnion],
     brave_capability: CapabilityOptions,
@@ -781,6 +819,9 @@ def maybe_perform_prompt_injection_scan(
     Skips when scanning is disabled, capability is not content_agent,
     no recent untrusted tool results are present, or the scanner is unavailable.
     """
+    if security_settings.shadow_prompt_injection_study_enabled:
+        _schedule_shadow_page_prompt_injection_scan(messages)
+
     if not security_settings.prompt_injection_scanning_enabled:
         return None
 

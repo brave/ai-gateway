@@ -76,6 +76,16 @@ PROMPT_INJECTION_SCAN_TOTAL = Counter(
     registry=REGISTRY,
 )
 
+SHADOW_ML_INJECTION_CLASSIFIER_CONFIDENCE_TOTAL = Counter(
+    name="shadow_ml_injection_classifier_confidence_total",
+    documentation=(
+        "Shadow ML injection classifier page-level max confidence scores "
+        "by bucket (0.0-0.1, 0.1-0.2, …, 0.9-1.0)"
+    ),
+    labelnames=("bucket",),
+    registry=REGISTRY,
+)
+
 TOKEN_GEN_LATENCY = Histogram(
     name="token_generation_latency_seconds",
     documentation="Latency for generating first token in seconds",
