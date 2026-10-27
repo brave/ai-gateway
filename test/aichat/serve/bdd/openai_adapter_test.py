@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -39,12 +40,20 @@ def ctx():
 
 
 def _tool_chunk(name=None, arguments=None, finish_reason=None):
+    return _indexed_tool_chunk(
+        0, name=name, arguments=arguments, tc_id="call_1", finish_reason=finish_reason
+    )
+
+
+def _indexed_tool_chunk(
+    index, name=None, arguments=None, tc_id=None, finish_reason=None
+):
     delta_kwargs = {}
     if name is not None or arguments is not None:
         delta_kwargs["tool_calls"] = [
             ChoiceDeltaToolCall(
-                index=0,
-                id="call_1",
+                index=index,
+                id=tc_id,
                 type="function",
                 function=ChoiceDeltaToolCallFunction(name=name, arguments=arguments),
             )
@@ -60,6 +69,43 @@ def _tool_chunk(name=None, arguments=None, finish_reason=None):
             )
         ],
     )
+
+
+def _parallel_tool_chunk(calls):
+    return ChatCompletionChunk(
+        id="log-1",
+        object="chat.completion.chunk",
+        created=1,
+        model="test-model",
+        choices=[
+            Choice(
+                index=0,
+                delta=ChoiceDelta(
+                    tool_calls=[
+                        ChoiceDeltaToolCall(
+                            index=index,
+                            id=tc_id,
+                            type="function",
+                            function=ChoiceDeltaToolCallFunction(
+                                name=name, arguments=arguments
+                            ),
+                        )
+                        for index, tc_id, name, arguments in calls
+                    ]
+                ),
+                finish_reason=None,
+            )
+        ],
+    )
+
+
+def _streamed_tool_calls(events):
+    found = []
+    for event in events:
+        payload = json.loads(event[6:].strip())
+        delta = payload["choices"][0].get("delta") or {}
+        found.extend(delta.get("tool_calls") or [])
+    return found
 
 
 def _untrusted_history():
@@ -776,3 +822,174 @@ def then_streamed_verdict(ctx):
 def then_tracked_verdict(ctx):
     assert ctx["tracked_tool_call"].alignment_check is not None
     assert ctx["tracked_tool_call"].alignment_check.reasoning == "verdict"
+
+
+# --- parallel tool call alignment ----------------------------------------------------------
+
+
+@given(
+    parsers.parse(
+        'buffered chunks for parallel tool calls "{first_tool}" and "{second_tool}"'
+    )
+)
+def given_parallel_tool_chunks(first_tool, second_tool, monkeypatch, ctx):
+    scans = []
+
+    async def fake(
+        tool_name, tool_arguments, messages, assistant_response=None, injection_scan_task=None
+    ):
+        scans.append((tool_name, tool_arguments))
+        return AlignmentCheckData(allowed=tool_name == first_tool, reasoning=tool_name)
+
+    monkeypatch.setattr(open_ai_adapter, "perform_alignment_check", fake)
+    ctx["scans"] = scans
+    ctx["parallel_tools"] = (first_tool, second_tool)
+    ctx["buffered_chunks"] = [
+        _indexed_tool_chunk(
+            0, name=first_tool, arguments='{"selector":', tc_id="call_click"
+        ),
+        _indexed_tool_chunk(0, arguments='"go"}'),
+        _indexed_tool_chunk(
+            1, name=second_tool, arguments='{"text":"hi"}', tc_id="call_type"
+        ),
+        _indexed_tool_chunk(0, finish_reason="tool_calls"),
+    ]
+    ctx["tracked_tool_calls"] = [
+        SimpleNamespace(function_name=first_tool, id="call_click", alignment_check=None),
+        SimpleNamespace(
+            function_name=second_tool, id="call_type", alignment_check=None
+        ),
+    ]
+
+
+@when("the buffered parallel tool calls are processed")
+def when_process_parallel(ctx):
+    first_tool, _second_tool = ctx["parallel_tools"]
+
+    async def run():
+        return [
+            event
+            async for event in open_ai_adapter.process_buffered_tool_call_chunks(
+                {"name": first_tool, "id": "call_click"},
+                ctx["buffered_chunks"],
+                ctx["history"],
+                tool_calls_in_response=ctx["tracked_tool_calls"],
+            )
+        ]
+
+    ctx["buffered_events"] = asyncio.run(run())
+
+
+@then("each parallel tool call is scanned with its own arguments")
+def then_parallel_scans(ctx):
+    first_tool, second_tool = ctx["parallel_tools"]
+    assert ctx["scans"] == [
+        (first_tool, '{"selector":"go"}'),
+        (second_tool, '{"text":"hi"}'),
+    ]
+    assert ctx["tracked_tool_calls"][0].alignment_check.allowed is True
+    assert ctx["tracked_tool_calls"][1].alignment_check.allowed is False
+
+
+@then("each streamed tool call carries its own alignment verdict")
+def then_parallel_streamed(ctx):
+    first_tool, second_tool = ctx["parallel_tools"]
+    by_name = {}
+    for tool_call in _streamed_tool_calls(ctx["buffered_events"]):
+        name = (tool_call.get("function") or {}).get("name")
+        if name:
+            by_name[name] = tool_call.get("alignment_check")
+    assert by_name[first_tool] == {"allowed": True, "reasoning": first_tool}
+    assert by_name[second_tool] == {"allowed": False, "reasoning": second_tool}
+
+
+@given(parsers.parse('the alignment bypass list contains "{tool_name}"'))
+def given_alignment_bypass_contains(tool_name, monkeypatch):
+    monkeypatch.setattr(
+        security_settings,
+        "allowed_bypass_tools",
+        {"alignment_check_bypass": [tool_name], "tool_result_bypass": []},
+    )
+
+
+@given(parsers.parse('a stream chunk whose tool calls are "{first}" and "{second}"'))
+def given_mixed_tool_chunk(first, second, ctx):
+    ctx["bypass_tool"] = first
+    ctx["checked_tool"] = second
+    ctx["stream_chunk"] = _parallel_tool_chunk(
+        [
+            (0, "call_bypass", first, "{}"),
+            (1, "call_checked", second, '{"selector":"go"}'),
+        ]
+    )
+
+
+@when("buffering is considered for the chunk")
+def when_consider_buffering(ctx):
+    manager = open_ai_adapter.OpenAIToolCallBufferManager()
+    ctx["should_buffer"] = manager.should_start_buffering(
+        ctx["stream_chunk"], ctx["history"]
+    )
+
+
+@then("alignment buffering starts for the chunk")
+def then_buffering_starts(ctx):
+    assert ctx["should_buffer"] is True
+
+
+@when("the same chunk is processed for alignment")
+def when_process_mixed_chunk(ctx, monkeypatch):
+    scans = []
+
+    async def fake(
+        tool_name, tool_arguments, messages, assistant_response=None, injection_scan_task=None
+    ):
+        scans.append((tool_name, tool_arguments))
+        return AlignmentCheckData(allowed=False, reasoning=tool_name)
+
+    monkeypatch.setattr(open_ai_adapter, "perform_alignment_check", fake)
+    ctx["scans"] = scans
+
+    async def run():
+        return [
+            event
+            async for event in open_ai_adapter.process_buffered_tool_call_chunks(
+                {"name": ctx["checked_tool"], "id": "call_checked"},
+                [ctx["stream_chunk"]],
+                ctx["history"],
+            )
+        ]
+
+    ctx["buffered_events"] = asyncio.run(run())
+
+
+@then(parsers.parse('"{tool_name}" is not scanned'))
+def then_tool_not_scanned(tool_name, ctx):
+    assert tool_name not in [name for name, _arguments in ctx["scans"]]
+
+
+@then(parsers.parse('"{tool_name}" is scanned with its own arguments'))
+def then_tool_scanned_alone(tool_name, ctx):
+    assert ctx["scans"] == [(tool_name, '{"selector":"go"}')]
+
+
+@then(parsers.parse('the streamed tool call "{tool_name}" carries no alignment verdict'))
+def then_streamed_without_verdict(tool_name, ctx):
+    matches = [
+        tool_call
+        for tool_call in _streamed_tool_calls(ctx["buffered_events"])
+        if (tool_call.get("function") or {}).get("name") == tool_name
+    ]
+    assert matches
+    assert "alignment_check" not in matches[0]
+
+
+@then(parsers.parse('the streamed tool call "{tool_name}" carries an alignment verdict'))
+def then_streamed_with_verdict(tool_name, ctx):
+    matches = [
+        tool_call
+        for tool_call in _streamed_tool_calls(ctx["buffered_events"])
+        if (tool_call.get("function") or {}).get("name") == tool_name
+    ]
+    assert matches
+    assert matches[0]["alignment_check"] == {"allowed": False, "reasoning": tool_name}

@@ -178,3 +178,24 @@ Feature: OpenAI adapter security and stream helpers
     When the buffered tool call chunks are processed
     Then the streamed chunk carries the alignment verdict
     And the tracked tool call carries the alignment verdict
+
+  Scenario: Parallel streamed tool calls are alignment-checked separately
+    Given alignment checking is enabled
+    And a message history with unbypassed tool results
+    And buffered chunks for parallel tool calls "click_element" and "type_text"
+    When the buffered parallel tool calls are processed
+    Then each parallel tool call is scanned with its own arguments
+    And each streamed tool call carries its own alignment verdict
+
+  Scenario: A bypass tool in the same chunk does not skip a later tool call
+    Given alignment checking is enabled
+    And a message history with unbypassed tool results
+    And the alignment bypass list contains "wait"
+    And a stream chunk whose tool calls are "wait" and "click_element"
+    When buffering is considered for the chunk
+    Then alignment buffering starts for the chunk
+    When the same chunk is processed for alignment
+    Then "wait" is not scanned
+    And "click_element" is scanned with its own arguments
+    And the streamed tool call "wait" carries no alignment verdict
+    And the streamed tool call "click_element" carries an alignment verdict
