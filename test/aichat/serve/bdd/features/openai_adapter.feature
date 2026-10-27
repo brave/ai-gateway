@@ -199,3 +199,31 @@ Feature: OpenAI adapter security and stream helpers
     And "click_element" is scanned with its own arguments
     And the streamed tool call "wait" carries no alignment verdict
     And the streamed tool call "click_element" carries an alignment verdict
+
+  Scenario: Mixed bypass and checked tools flush when the first chunk is final
+    Given alignment checking is enabled
+    And a message history with unbypassed tool results
+    And the alignment bypass list contains "wait"
+    And a finishing stream chunk whose tool calls are "wait" and "click_element"
+    When the alignment buffering handles the chunk
+    Then buffering decision continue is True with chunks 1
+    And "click_element" is scanned with its own arguments
+    And "wait" is not scanned
+
+  Scenario: Bypass tool argument continuations are not scanned as unknown tools
+    Given alignment checking is enabled
+    And a message history with unbypassed tool results
+    And the alignment bypass list contains "wait"
+    And a bypass-only tool chunk for "wait"
+    And a follow-up stream chunk with wait arguments and a "click_element" start
+    When alignment buffering handles the tool call sequence
+    Then "wait" is not scanned
+    And "click_element" is scanned with its own arguments
+
+  Scenario: Buffered tool calls are emitted when the stream ends mid-buffer
+    Given alignment checking is enabled
+    And a message history with unbypassed tool results
+    And a model stream that ends after an unfinished "click_element" call
+    When the gateway streams the model response
+    Then "click_element" is scanned with its own arguments
+    And the streamed tool call "click_element" carries an alignment verdict

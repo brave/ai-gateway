@@ -15,6 +15,7 @@ from openai.types.chat.chat_completion_chunk import (
 )
 from pytest_bdd import given, parsers, scenarios, then, when
 
+from aichat.protocol.open_ai_protocol import Request as OpenAIRequest
 from aichat.protocol.open_ai_protocol import (
     AssistantMessage,
     ImageContentPart,
@@ -27,6 +28,7 @@ from aichat.protocol.open_ai_protocol import (
 )
 from aichat.responses import CompactionMetadata
 from aichat.serve import open_ai_adapter
+from aichat.serve.open_ai_api import process_streaming_response
 from aichat.serve.services.security_settings import security_settings
 from aichat.serve.tool_parser import AlignmentCheckData
 
@@ -71,7 +73,7 @@ def _indexed_tool_chunk(
     )
 
 
-def _parallel_tool_chunk(calls):
+def _parallel_tool_chunk(calls, finish_reason=None):
     return ChatCompletionChunk(
         id="log-1",
         object="chat.completion.chunk",
@@ -93,7 +95,7 @@ def _parallel_tool_chunk(calls):
                         for index, tc_id, name, arguments in calls
                     ]
                 ),
-                finish_reason=None,
+                finish_reason=finish_reason,
             )
         ],
     )
@@ -127,6 +129,23 @@ def _untrusted_history():
 
 def _trusted_history():
     return [UserMessage(content="hi")]
+
+
+def _record_denying_alignment(ctx, monkeypatch):
+    scans = []
+
+    async def fake(
+        tool_name,
+        tool_arguments,
+        messages,
+        assistant_response=None,
+        injection_scan_task=None,
+    ):
+        scans.append((tool_name, tool_arguments))
+        return AlignmentCheckData(allowed=False, reasoning=tool_name)
+
+    monkeypatch.setattr(open_ai_adapter, "perform_alignment_check", fake)
+    ctx["scans"] = scans
 
 
 def _mock_scanner(allowed=False, reasoning="blocked"):
@@ -1007,3 +1026,102 @@ def then_streamed_with_verdict(tool_name, ctx):
     ]
     assert matches
     assert matches[0]["alignment_check"] == {"allowed": False, "reasoning": tool_name}
+
+
+@given(
+    parsers.parse(
+        'a finishing stream chunk whose tool calls are "{first}" and "{second}"'
+    )
+)
+def given_finishing_mixed_tool_chunk(first, second, ctx, monkeypatch):
+    _record_denying_alignment(ctx, monkeypatch)
+    ctx["checked_tool"] = second
+    ctx["buffer_manager"] = open_ai_adapter.OpenAIToolCallBufferManager()
+    ctx["stream_chunk"] = _parallel_tool_chunk(
+        [
+            (0, "call_bypass", first, "{}"),
+            (1, "call_checked", second, '{"selector":"go"}'),
+        ],
+        finish_reason="tool_calls",
+    )
+
+
+@given(parsers.parse('a bypass-only tool chunk for "{tool_name}"'))
+def given_bypass_only_chunk(tool_name, ctx):
+    ctx["sequence_chunks"] = [_tool_chunk(name=tool_name, arguments="{")]
+
+
+@given(
+    parsers.parse(
+        'a follow-up stream chunk with wait arguments and a "{tool_name}" start'
+    )
+)
+def given_wait_continuation_chunk(tool_name, ctx):
+    ctx["sequence_chunks"].append(
+        _parallel_tool_chunk(
+            [
+                (0, "call_bypass", None, '"ms":500}'),
+                (1, "call_checked", tool_name, '{"selector":"go"}'),
+            ],
+            finish_reason="tool_calls",
+        )
+    )
+    ctx["checked_tool"] = tool_name
+
+
+@when("alignment buffering handles the tool call sequence")
+def when_handle_tool_sequence(ctx, monkeypatch):
+    _record_denying_alignment(ctx, monkeypatch)
+
+    async def run():
+        manager = open_ai_adapter.OpenAIToolCallBufferManager()
+        emitted = []
+        for chunk in ctx["sequence_chunks"]:
+            finish = chunk.choices[0].finish_reason
+            _should_continue, chunks, _tool_name = (
+                await open_ai_adapter.handle_alignment_buffering(
+                    manager,
+                    chunk,
+                    finish,
+                    ctx["history"],
+                    None,
+                    MagicMock(),
+                    [],
+                    None,
+                )
+            )
+            emitted.extend(chunks)
+        return emitted
+
+    ctx["buffered_events"] = asyncio.run(run())
+
+
+@given(parsers.parse('a model stream that ends after an unfinished "{tool_name}" call'))
+def given_unfinished_tool_stream(tool_name, ctx):
+    ctx["model_stream"] = [
+        _indexed_tool_chunk(
+            0, name=tool_name, arguments='{"selector":"go"}', tc_id="call_checked"
+        )
+    ]
+
+
+@when("the gateway streams the model response")
+def when_gateway_streams(ctx, monkeypatch):
+    _record_denying_alignment(ctx, monkeypatch)
+    request = OpenAIRequest(model="test-model", messages=ctx["history"], stream=True)
+
+    async def model_stream():
+        for chunk in ctx["model_stream"]:
+            yield chunk
+
+    async def run():
+        return [
+            event
+            async for event in process_streaming_response(model_stream(), request, [])
+        ]
+
+    ctx["buffered_events"] = [
+        event
+        for event in asyncio.run(run())
+        if event.startswith("data: {") and '"choices"' in event
+    ]
