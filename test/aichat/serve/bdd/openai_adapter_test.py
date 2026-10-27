@@ -836,7 +836,11 @@ def given_parallel_tool_chunks(first_tool, second_tool, monkeypatch, ctx):
     scans = []
 
     async def fake(
-        tool_name, tool_arguments, messages, assistant_response=None, injection_scan_task=None
+        tool_name,
+        tool_arguments,
+        messages,
+        assistant_response=None,
+        injection_scan_task=None,
     ):
         scans.append((tool_name, tool_arguments))
         return AlignmentCheckData(allowed=tool_name == first_tool, reasoning=tool_name)
@@ -855,7 +859,9 @@ def given_parallel_tool_chunks(first_tool, second_tool, monkeypatch, ctx):
         _indexed_tool_chunk(0, finish_reason="tool_calls"),
     ]
     ctx["tracked_tool_calls"] = [
-        SimpleNamespace(function_name=first_tool, id="call_click", alignment_check=None),
+        SimpleNamespace(
+            function_name=first_tool, id="call_click", alignment_check=None
+        ),
         SimpleNamespace(
             function_name=second_tool, id="call_type", alignment_check=None
         ),
@@ -942,7 +948,11 @@ def when_process_mixed_chunk(ctx, monkeypatch):
     scans = []
 
     async def fake(
-        tool_name, tool_arguments, messages, assistant_response=None, injection_scan_task=None
+        tool_name,
+        tool_arguments,
+        messages,
+        assistant_response=None,
+        injection_scan_task=None,
     ):
         scans.append((tool_name, tool_arguments))
         return AlignmentCheckData(allowed=False, reasoning=tool_name)
@@ -973,7 +983,9 @@ def then_tool_scanned_alone(tool_name, ctx):
     assert ctx["scans"] == [(tool_name, '{"selector":"go"}')]
 
 
-@then(parsers.parse('the streamed tool call "{tool_name}" carries no alignment verdict'))
+@then(
+    parsers.parse('the streamed tool call "{tool_name}" carries no alignment verdict')
+)
 def then_streamed_without_verdict(tool_name, ctx):
     matches = [
         tool_call
@@ -984,7 +996,9 @@ def then_streamed_without_verdict(tool_name, ctx):
     assert "alignment_check" not in matches[0]
 
 
-@then(parsers.parse('the streamed tool call "{tool_name}" carries an alignment verdict'))
+@then(
+    parsers.parse('the streamed tool call "{tool_name}" carries an alignment verdict')
+)
 def then_streamed_with_verdict(tool_name, ctx):
     matches = [
         tool_call
