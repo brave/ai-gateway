@@ -15,11 +15,11 @@ from openai.types.chat.chat_completion_chunk import (
 )
 from pytest_bdd import given, parsers, scenarios, then, when
 
-from aichat.protocol.open_ai_protocol import Request as OpenAIRequest
 from aichat.protocol.open_ai_protocol import (
     AssistantMessage,
     ImageContentPart,
     ImageUrl,
+    Request as OpenAIRequest,
     TextContentPart,
     ToolCall,
     ToolCallFunction,
