@@ -92,6 +92,22 @@ Feature: NEAR TEE attestation
     Then verification is failed
     And the s3 heads checked pre-verified/abc123.json + signing-keys/{signing_key}.json
 
+  Scenario Outline: Compose sequence verification is skipped when disabled
+    Given a real ohttp attestation with signature valid
+    And signing keys registered
+    And a verified compose manager image <compose_state>
+    And the s3 heads return <s3_state>
+    And compose sequence verification is disabled
+    When the attestation is verified
+    Then verification is successful
+    And the s3 heads checked pre-verified/abc123.json + signing-keys/{signing_key}.json
+
+    Examples:
+      | compose_state               | s3_state                |
+      | verified                    | objects                 |
+      | verified                    | all but the serving log |
+      | verified without compose up | objects                 |
+
   Scenario: A non-404 s3 head error is re-raised
     Given an s3 head client that raises AccessDenied
     When a head object is performed for "pre-verified" "digest-x"
