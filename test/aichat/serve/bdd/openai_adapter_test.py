@@ -19,12 +19,14 @@ from aichat.protocol.open_ai_protocol import (
     AssistantMessage,
     ImageContentPart,
     ImageUrl,
-    Request as OpenAIRequest,
     TextContentPart,
     ToolCall,
     ToolCallFunction,
     ToolMessage,
     UserMessage,
+)
+from aichat.protocol.open_ai_protocol import (
+    Request as OpenAIRequest,
 )
 from aichat.responses import CompactionMetadata
 from aichat.serve import open_ai_adapter
