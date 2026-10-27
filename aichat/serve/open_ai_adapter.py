@@ -786,7 +786,8 @@ async def process_buffered_tool_call_chunks(
                 if position in assigned_tool_calls:
                     continue
                 if tc.function_name == tool_name and (
-                    tool_id is None or tc.id == tool_id
+                    (tool_id is not None and tc.id == tool_id)
+                    or (tool_id is None and tc.index == tool["index"])
                 ):
                     tc.alignment_check = alignment_result
                     assigned_tool_calls.add(position)
