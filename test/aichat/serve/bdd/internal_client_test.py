@@ -186,6 +186,28 @@ def _(ctx, model):
     )
 
 
+@when(
+    parsers.parse('a rate limit check is sent for model "{model}" with WAF signals'),
+    target_fixture="result",
+)
+def _(ctx, model):
+    return asyncio.run(
+        _REAL_RATE_LIMIT_CHECK(
+            make_client(ctx),
+            model=model,
+            hashed_ip_current="cur-hash",
+            hashed_ip_previous="prev-hash",
+            is_premium_host=False,
+            is_content_agent_request=False,
+            is_free_model=True,
+            maximum_requests=10,
+            interval_in_seconds=60,
+            force_error_rate_limit=False,
+            waf_signals={"alpha": "one"},
+        )
+    )
+
+
 @then(parsers.parse('aichat-internal received a {method} to "{path}"'))
 def _(ctx, method, path, result):
     assert ctx[
@@ -242,6 +264,16 @@ def _(ctx, result):
     assert ctx["attempts"] == 2
     assert len(ctx["requests"]) == 1
     assert result == {"ok": True, "current": "c"}
+
+
+@then("the rate limit payload carried the WAF signals")
+def _(ctx):
+    assert ctx["requests"][-1]["body"]["waf_signals"] == {"alpha": "one"}
+
+
+@then("the rate limit payload carried empty WAF signals")
+def _(ctx):
+    assert ctx["requests"][-1]["body"]["waf_signals"] == {}
 
 
 @then("the rate limit payload carried the hashed identity")
