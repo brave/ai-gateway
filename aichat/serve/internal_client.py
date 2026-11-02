@@ -127,6 +127,7 @@ async def rate_limit_check(
     interval_in_seconds: int,
     force_error_rate_limit: bool,
     is_premium_request: bool = False,
+    waf_signals: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     return await _post(
         client,
@@ -142,6 +143,7 @@ async def rate_limit_check(
             "interval_in_seconds": interval_in_seconds,
             "force_error_rate_limit": force_error_rate_limit,
             "is_premium_request": is_premium_request,
+            "waf_signals": waf_signals or {},
         },
     )
 

@@ -83,6 +83,7 @@ from aichat.serve.open_ai_adapter import (
     ChunkEmitter,
     OpenAIToolCallBufferManager,
     StreamingInjectionScanEmitter,
+    flush_alignment_tool_buffer,
     handle_alignment_buffering,
     maybe_perform_prompt_injection_scan,
     process_non_streaming_alignment_check,
@@ -810,6 +811,17 @@ async def process_streaming_response(
                 actual_model = chunk.model.replace(" ", "")
 
             if hasattr(chunk, "usage") and chunk.usage:
+                if security_settings.alignment_checking_enabled:
+                    for chunk_str in await flush_alignment_tool_buffer(
+                        tool_buffer_manager,
+                        request.messages,
+                        mcp_executor,
+                        backend,
+                        tool_calls_in_response,
+                        assistant_content_accumulator or None,
+                        injection_scan_task=injection_scan_task,
+                    ):
+                        yield chunk_emitter.emit(chunk_str)
                 usage_chunk_dict = chunk.model_dump(exclude_none=True)
                 if "model" in usage_chunk_dict:
                     usage_chunk_dict["model"] = usage_chunk_dict["model"].replace(
@@ -955,6 +967,18 @@ async def process_streaming_response(
                     chunk_json = json.dumps(chunk_dict, separators=(",", ":"))
                     logger.debug(f"Chunk JSON: {chunk_json}")
                     yield chunk_emitter.emit(f"data: {chunk_json}\n\n")
+
+        if security_settings.alignment_checking_enabled:
+            for chunk_str in await flush_alignment_tool_buffer(
+                tool_buffer_manager,
+                request.messages,
+                mcp_executor,
+                backend,
+                tool_calls_in_response,
+                assistant_content_accumulator or None,
+                injection_scan_task=injection_scan_task,
+            ):
+                yield chunk_emitter.emit(chunk_str)
 
         if not assistant_content_accumulator and not tool_calls_in_response:
             if chunk_count == 0:

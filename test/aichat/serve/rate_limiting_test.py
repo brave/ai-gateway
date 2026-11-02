@@ -48,6 +48,7 @@ def mock_request():
     request.state = mock.Mock()
     request.state.httpx_client = mock.Mock()
     request.query_params = {}
+    request.headers = {}
     return request
 
 

@@ -40,7 +40,7 @@ This should return a JSON array containing your configured model(s). If it retur
 
 ### For Brave Developers
 
-Checkout [internal setup](https://github.com/brave/ai-gateway-ops#aichat-server-development-for-brave-employees) for connecting a local browser build, premium access, and other Brave-internal instructions.
+Checkout [internal setup](https://github.com/brave/aichat-ops#ai-gateway-server-development-for-brave-employees) for connecting a local browser build, premium access, and other Brave-internal instructions.
 
 ## Testing
 

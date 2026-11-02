@@ -89,6 +89,22 @@ class OpenAIToolCallBufferManager:
         self.buffer: list[ChatCompletionChunk] = []
         self.is_buffering: bool = False
         self.tool_info: dict[str, Any] = {}
+        self.turn_tool_names: dict[int, str] = {}
+
+    def observe_tool_call_chunk(self, chunk: ChatCompletionChunk) -> None:
+        if not (choices := getattr(chunk, "choices", None)) or not choices[0]:
+            return
+        delta = choices[0].delta
+        if not getattr(delta, "tool_calls", None):
+            return
+        for tool_call in delta.tool_calls:
+            index = tool_call.index if tool_call.index is not None else 0
+            name = tool_call.function.name if tool_call.function else None
+            if name:
+                self.turn_tool_names[index] = name
+
+    def end_tool_call_turn(self) -> None:
+        self.turn_tool_names.clear()
 
     def should_start_buffering(
         self, chunk: ChatCompletionChunk, messages: list[MessageUnion]
@@ -105,35 +121,43 @@ class OpenAIToolCallBufferManager:
         if not does_contain_untrusted_content(messages):
             return False
 
-        # Check if first tool call has a function name (indicates start of tool call)
-        first_tool_call = tool_calls[0]
-        if first_tool_call.function and first_tool_call.function.name:
-            tool_name = first_tool_call.function.name
-            if (
-                tool_name
-                in security_settings.allowed_bypass_tools["alignment_check_bypass"]
-            ):
+        # A leading bypass name must not hide another tool call in the same chunk.
+        bypass = security_settings.allowed_bypass_tools["alignment_check_bypass"]
+        named_tools = [
+            tool_call.function.name
+            for tool_call in tool_calls
+            if tool_call.function and tool_call.function.name
+        ]
+        if not named_tools:
+            return False
+        if all(tool_name in bypass for tool_name in named_tools):
+            for tool_name in named_tools:
                 ALIGNMENT_CHECK_TOTAL.labels(
                     allowed=True,
                     tool=tool_name,
                     bypassed=True,
                 ).inc()
-                return False
-            return True
-
-        return False
+            return False
+        return True
 
     def start_buffering(self, chunk: ChatCompletionChunk) -> None:
-        """Start buffering and extract tool information from the first chunk."""
+        """Start buffering and record the first tool that will be checked."""
         self.is_buffering = True
 
-        # Extract tool name and ID from the first chunk
         choice = chunk.choices[0]
         if choice and choice.delta and choice.delta.tool_calls:
-            first_tool_call = choice.delta.tool_calls[0]
-            if first_tool_call.function and first_tool_call.function.name:
-                self.tool_info["name"] = first_tool_call.function.name
-                self.tool_info["id"] = first_tool_call.id
+            bypass = security_settings.allowed_bypass_tools["alignment_check_bypass"]
+            selected = None
+            for tool_call in choice.delta.tool_calls:
+                name = tool_call.function.name if tool_call.function else None
+                if name and name not in bypass:
+                    selected = tool_call
+                    break
+            if selected is None:
+                selected = choice.delta.tool_calls[0]
+            if selected.function and selected.function.name:
+                self.tool_info["name"] = selected.function.name
+                self.tool_info["id"] = selected.id
 
         self.buffer.append(chunk)
 
@@ -161,7 +185,11 @@ class OpenAIToolCallBufferManager:
 
     def get_buffered_data(self) -> dict[str, Any]:
         """Get the buffered data and reset the buffer."""
-        data = {"tool_info": self.tool_info, "buffer": self.buffer}
+        data = {
+            "tool_info": self.tool_info,
+            "buffer": self.buffer,
+            "turn_tool_names": dict(self.turn_tool_names),
+        }
         self.reset()
         return data
 
@@ -442,19 +470,15 @@ async def perform_alignment_check(
     )
 
 
-def extract_tool_arguments_from_buffered_chunks(
+def parse_buffered_tool_calls(
     buffered_chunks: list[ChatCompletionChunk],
-) -> str:
-    """
-    Extract complete tool arguments from buffered chunks.
+) -> list[dict[str, Any]]:
+    """Reassemble each streamed tool call by its delta index.
 
-    Args:
-        buffered_chunks: List of buffered ChatCompletionChunk objects
-
-    Returns:
-        Complete tool arguments string
+    Parallel tool calls share a turn but keep separate indexes. Argument
+    fragments are appended only onto the tool call they belong to.
     """
-    complete_args = ""
+    grouped: dict[int, dict[str, Any]] = {}
     for chunk in buffered_chunks:
         if not hasattr(chunk, "choices") or not chunk.choices:
             continue
@@ -462,11 +486,45 @@ def extract_tool_arguments_from_buffered_chunks(
         if choice is None:
             continue
         delta = choice.delta
-        if hasattr(delta, "tool_calls") and delta.tool_calls:
-            for tool_call in delta.tool_calls:
-                if tool_call.function and tool_call.function.arguments:
-                    complete_args += tool_call.function.arguments
-    return complete_args
+        if not hasattr(delta, "tool_calls") or not delta.tool_calls:
+            continue
+        for tool_call in delta.tool_calls:
+            index = tool_call.index if tool_call.index is not None else 0
+            entry = grouped.get(index)
+            if entry is None:
+                entry = {"index": index, "id": None, "name": None, "arguments": ""}
+                grouped[index] = entry
+            if tool_call.id:
+                entry["id"] = tool_call.id
+            function = tool_call.function
+            if function and function.name:
+                entry["name"] = function.name
+            if function and function.arguments:
+                entry["arguments"] += function.arguments
+    return [grouped[index] for index in sorted(grouped)]
+
+
+def extract_tool_arguments_from_buffered_chunks(
+    buffered_chunks: list[ChatCompletionChunk],
+    tool_index: int | None = None,
+) -> str:
+    """
+    Extract complete tool arguments from buffered chunks.
+
+    Args:
+        buffered_chunks: List of buffered ChatCompletionChunk objects
+        tool_index: When set, return arguments for that tool call only
+
+    Returns:
+        Complete tool arguments string
+    """
+    parsed = parse_buffered_tool_calls(buffered_chunks)
+    if tool_index is not None:
+        for tool in parsed:
+            if tool["index"] == tool_index:
+                return tool["arguments"]
+        return ""
+    return "".join(tool["arguments"] for tool in parsed)
 
 
 async def process_non_streaming_alignment_check(
@@ -540,6 +598,35 @@ async def process_non_streaming_alignment_check(
     return response
 
 
+async def flush_alignment_tool_buffer(
+    tool_buffer_manager: OpenAIToolCallBufferManager,
+    messages: list[MessageUnion],
+    mcp_executor,
+    backend,
+    tool_calls_in_response: list,
+    assistant_content: str | None,
+    injection_scan_task: asyncio.Task | None = None,
+) -> list[str]:
+    if not tool_buffer_manager.is_buffering:
+        return []
+    buffered_data = tool_buffer_manager.get_buffered_data()
+    chunks_to_yield: list[str] = []
+    async for chunk_str in process_buffered_tool_call_chunks(
+        buffered_data["tool_info"],
+        buffered_data["buffer"],
+        messages,
+        mcp_executor,
+        backend,
+        tool_calls_in_response,
+        assistant_content,
+        injection_scan_task=injection_scan_task,
+        known_tool_names_by_index=buffered_data["turn_tool_names"],
+    ):
+        chunks_to_yield.append(chunk_str)
+    tool_buffer_manager.end_tool_call_turn()
+    return chunks_to_yield
+
+
 async def handle_alignment_buffering(
     tool_buffer_manager: OpenAIToolCallBufferManager,
     chunk,
@@ -562,42 +649,57 @@ async def handle_alignment_buffering(
     """
     chunks_to_yield = []
 
+    tool_buffer_manager.observe_tool_call_chunk(chunk)
+
     if tool_buffer_manager.should_start_buffering(chunk, messages):
         tool_buffer_manager.start_buffering(chunk)
         tool_name = tool_buffer_manager.tool_info.get("name")
-        return True, [], tool_name
+        if stop_reason == "tool_calls":
+            chunks_to_yield.extend(
+                await flush_alignment_tool_buffer(
+                    tool_buffer_manager,
+                    messages,
+                    mcp_executor,
+                    backend,
+                    tool_calls_in_response,
+                    assistant_content,
+                    injection_scan_task=injection_scan_task,
+                )
+            )
+        return True, chunks_to_yield, tool_name
 
     if tool_buffer_manager.should_continue_buffering(chunk):
         tool_buffer_manager.add_to_buffer(chunk)
         if stop_reason == "tool_calls":
-            buffered_data = tool_buffer_manager.get_buffered_data()
-            async for chunk_str in process_buffered_tool_call_chunks(
-                buffered_data["tool_info"],
-                buffered_data["buffer"],
+            chunks_to_yield.extend(
+                await flush_alignment_tool_buffer(
+                    tool_buffer_manager,
+                    messages,
+                    mcp_executor,
+                    backend,
+                    tool_calls_in_response,
+                    assistant_content,
+                    injection_scan_task=injection_scan_task,
+                )
+            )
+        return True, chunks_to_yield, None
+
+    if tool_buffer_manager.is_buffering:
+        chunks_to_yield.extend(
+            await flush_alignment_tool_buffer(
+                tool_buffer_manager,
                 messages,
                 mcp_executor,
                 backend,
                 tool_calls_in_response,
                 assistant_content,
                 injection_scan_task=injection_scan_task,
-            ):
-                chunks_to_yield.append(chunk_str)
-        return True, chunks_to_yield, None
-
-    if tool_buffer_manager.is_buffering:
-        buffered_data = tool_buffer_manager.get_buffered_data()
-        async for chunk_str in process_buffered_tool_call_chunks(
-            buffered_data["tool_info"],
-            buffered_data["buffer"],
-            messages,
-            mcp_executor,
-            backend,
-            tool_calls_in_response,
-            assistant_content,
-            injection_scan_task=injection_scan_task,
-        ):
-            chunks_to_yield.append(chunk_str)
+            )
+        )
         return False, chunks_to_yield, None
+
+    if stop_reason == "tool_calls":
+        tool_buffer_manager.end_tool_call_turn()
 
     return False, [], None
 
@@ -611,12 +713,13 @@ async def process_buffered_tool_call_chunks(
     tool_calls_in_response: list | None = None,
     assistant_response: str | None = None,
     injection_scan_task: asyncio.Task | None = None,
+    known_tool_names_by_index: dict[int, str] | None = None,
 ) -> AsyncIterator[str]:
     """
     Process buffered tool call chunks with alignment checking.
 
-    Performs alignment check on the buffered tool call and adds the alignment
-    metadata to the first chunk that contains the tool name.
+    Performs an alignment check per buffered tool call and adds that verdict
+    to the first chunk that contains the tool's name.
 
     Args:
         tool_info: Dict with tool name and id
@@ -634,47 +737,84 @@ async def process_buffered_tool_call_chunks(
     if not buffered_chunks:
         return
 
-    tool_name = tool_info.get("name", "unknown_tool")
-    tool_id = tool_info.get("id")
+    parsed_tools = parse_buffered_tool_calls(buffered_chunks)
+    if not parsed_tools:
+        parsed_tools = [
+            {
+                "index": 0,
+                "id": tool_info.get("id"),
+                "name": tool_info.get("name", "unknown_tool"),
+                "arguments": "",
+            }
+        ]
 
-    tool_arguments = extract_tool_arguments_from_buffered_chunks(buffered_chunks)
-    alignment_result = await perform_alignment_check(
-        tool_name,
-        tool_arguments,
-        messages,
-        assistant_response,
-        injection_scan_task=injection_scan_task,
-    )
+    bypass = security_settings.allowed_bypass_tools["alignment_check_bypass"]
+    alignment_by_index: dict[int, AlignmentCheckData] = {}
+    assigned_tool_calls: set[int] = set()
+    for tool in parsed_tools:
+        tool_name = tool["name"]
+        tool_id = tool["id"]
+        if not tool_name:
+            tool_name = (known_tool_names_by_index or {}).get(tool["index"])
+        if not tool_name:
+            if len(parsed_tools) == 1:
+                tool_name = tool_info.get("name", "unknown_tool")
+                if tool_id is None:
+                    tool_id = tool_info.get("id")
+            else:
+                continue
+        if tool_name in bypass:
+            ALIGNMENT_CHECK_TOTAL.labels(
+                allowed=True,
+                tool=tool_name,
+                bypassed=True,
+            ).inc()
+            continue
 
-    # Update the matching ToolCall object in tool_calls_in_response if provided
-    if tool_calls_in_response:
-        for tc in tool_calls_in_response:
-            if tc.function_name == tool_name and (tool_id is None or tc.id == tool_id):
-                tc.alignment_check = alignment_result
-                break
+        alignment_result = await perform_alignment_check(
+            tool_name,
+            tool["arguments"],
+            messages,
+            assistant_response,
+            injection_scan_task=injection_scan_task,
+        )
+        injection_scan_task = None
+        alignment_by_index[tool["index"]] = alignment_result
 
-    first_chunk_with_name_processed = False
+        if tool_calls_in_response:
+            for position, tc in enumerate(tool_calls_in_response):
+                if position in assigned_tool_calls:
+                    continue
+                if tc.function_name == tool_name and (
+                    (tool_id is not None and tc.id == tool_id)
+                    or (tool_id is None and tc.index == tool["index"])
+                ):
+                    tc.alignment_check = alignment_result
+                    assigned_tool_calls.add(position)
+                    break
+
+    stamped_indexes: set[int] = set()
     for chunk in buffered_chunks:
         chunk_dict = chunk.model_dump(exclude_none=True)
 
         if "model" in chunk_dict:
             chunk_dict["model"] = chunk_dict["model"].replace(" ", "")
 
-        # Add alignment metadata to the first chunk that has the tool name
-        if not first_chunk_with_name_processed:
-            choices = chunk_dict.get("choices", [])
-            if choices and choices[0]:
-                delta = choices[0].get("delta", {})
-                tool_calls = delta.get("tool_calls", [])
-                if tool_calls:
-                    for tc in tool_calls:
-                        if tc.get("function", {}).get("name"):
-                            tc["alignment_check"] = {
-                                "allowed": alignment_result.allowed,
-                                "reasoning": alignment_result.reasoning,
-                            }
-                            first_chunk_with_name_processed = True
-                            break
+        choices = chunk_dict.get("choices", [])
+        if choices and choices[0]:
+            delta = choices[0].get("delta", {})
+            tool_calls = delta.get("tool_calls", [])
+            for tc in tool_calls or []:
+                index = tc.get("index", 0)
+                if index in stamped_indexes or index not in alignment_by_index:
+                    continue
+                if tc.get("function", {}).get("name"):
+                    alignment_result = alignment_by_index[index]
+                    tc["alignment_check"] = {
+                        "allowed": alignment_result.allowed,
+                        "reasoning": alignment_result.reasoning,
+                    }
+                    stamped_indexes.add(index)
 
         should_skip = False
         if (

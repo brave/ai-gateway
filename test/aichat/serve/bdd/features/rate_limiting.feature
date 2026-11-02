@@ -53,6 +53,28 @@ Feature: Rate limiting
     Then the rate limit verdict allows
     And the rate limit payload carried the model config
 
+  Scenario: WAF signal headers are relayed to aichat-internal
+    Given the internal API is enabled
+    And model "m" is free with limit 10 per 60 seconds
+    And aichat-internal allows the rate limit check
+    When a rate limit is checked with WAF headers
+    Then the rate limit verdict allows
+    And the rate limit payload carried only the prefixed WAF headers
+
+  Scenario: Requests without WAF headers relay no signals
+    Given the internal API is enabled
+    And model "m" is free with limit 10 per 60 seconds
+    And aichat-internal allows the rate limit check
+    When a rate limit is checked
+    Then the rate limit payload carried no WAF signals
+
+  Scenario: Relayed WAF signals are bounded
+    Given the internal API is enabled
+    And model "m" is free with limit 10 per 60 seconds
+    And aichat-internal allows the rate limit check
+    When a rate limit is checked with many WAF headers
+    Then the rate limit payload carried a bounded set of WAF signals
+
   Scenario: Free models without rate limit config are denied
     Given the internal API is enabled
     And model "m" is free without limits

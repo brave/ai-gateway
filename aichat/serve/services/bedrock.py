@@ -342,7 +342,7 @@ def format_tools_for_bedrock(tools: list[Tool]) -> list[Tool]:
     formatted_tools = []
 
     for tool in tools:
-        tool_dict = tool.model_dump()
+        tool_dict = tool.model_dump() if hasattr(tool, "model_dump") else dict(tool)
         # All tools are expected to be in OpenAI format with type="function"
         function_def = tool_dict["function"]
         if not isinstance(function_def, dict):

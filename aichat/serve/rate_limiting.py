@@ -12,7 +12,7 @@ from aichat.serve import internal_client
 from aichat.serve.internal_settings import internal_settings
 from aichat.serve.rate_limiting_settings import rate_limiting_settings
 from aichat.serve.services.model_settings import model_settings
-from aichat.serve.utils import get_real_ip
+from aichat.serve.utils import extract_waf_signals, get_real_ip
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,7 @@ async def check_rate_limit(
         interval_in_seconds=interval_in_seconds,
         force_error_rate_limit=False,
         is_premium_request=is_premium_request,
+        waf_signals=extract_waf_signals(raw_request.headers),
     )
     if response is None:
         logger.error(

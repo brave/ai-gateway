@@ -59,6 +59,15 @@ Feature: aichat-internal HTTP client
     Then aichat-internal received a POST to "/1/rate_limit"
     And the rate limit payload carried the hashed identity
 
+  Scenario: Rate limit checks post WAF signals to /1/rate_limit
+    When a rate limit check is sent for model "llama-2-13b-chat" with WAF signals
+    Then aichat-internal received a POST to "/1/rate_limit"
+    And the rate limit payload carried the WAF signals
+
+  Scenario: Rate limit checks default to empty WAF signals
+    When a rate limit check is sent for model "llama-2-13b-chat"
+    Then the rate limit payload carried empty WAF signals
+
   Scenario: Non-200 responses report unavailability and return nothing
     Given aichat-internal answers 503
     When auth verify is sent
