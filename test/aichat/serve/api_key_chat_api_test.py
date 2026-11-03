@@ -32,14 +32,16 @@ class TestAuthorizeApiKey:
         )
         verify = AsyncMock()
         monkeypatch.setattr(api_key_chat_api.internal_client, "api_key_verify", verify)
-        assert await api_key_chat_api.authorize_api_key(mock_request, "k") is None
+        error, _ = await api_key_chat_api.authorize_api_key(mock_request, "k")
+        assert error is None
         verify.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_allowed(self, mock_request, monkeypatch):
         verify = AsyncMock(return_value={"allowed": True})
         monkeypatch.setattr(api_key_chat_api.internal_client, "api_key_verify", verify)
-        assert await api_key_chat_api.authorize_api_key(mock_request, "k") is None
+        error, _ = await api_key_chat_api.authorize_api_key(mock_request, "k")
+        assert error is None
         verify.assert_awaited_once_with(mock_request.state.httpx_client, "k")
 
     @pytest.mark.asyncio
@@ -50,7 +52,7 @@ class TestAuthorizeApiKey:
             "api_key_verify",
             AsyncMock(return_value=verdict),
         )
-        resp = await api_key_chat_api.authorize_api_key(mock_request, "k")
+        resp, _ = await api_key_chat_api.authorize_api_key(mock_request, "k")
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
@@ -60,7 +62,7 @@ class TestAuthorizeApiKey:
             "api_key_verify",
             AsyncMock(return_value=None),
         )
-        resp = await api_key_chat_api.authorize_api_key(mock_request, "k")
+        resp, _ = await api_key_chat_api.authorize_api_key(mock_request, "k")
         assert resp.status_code == 503
 
 
