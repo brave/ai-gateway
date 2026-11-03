@@ -15,6 +15,7 @@ from aichat.protocol.open_ai_protocol import (
     Capability,
     CapabilityOptions,
     Message,
+    Tool,
     has_capability,
 )
 from aichat.serve.androcles import (
@@ -34,9 +35,21 @@ AUTOMATIC_TRIAGE_MODELS = frozenset(
     {"automatic", "automatic-bravebot", "automatic-brave-bot"}
 )
 
+WEB_TOOL_PREFIX = "web_"
+NON_WEB_TOOL_NAMES = frozenset({"web_search"})
+TOOLS_TRIAGE_CATEGORY = "tools"
+
 
 def is_automatic_triage_model(model: str) -> bool:
     return model in AUTOMATIC_TRIAGE_MODELS
+
+
+def has_web_tools(tools: list[Tool] | None) -> bool:
+    for tool in tools or []:
+        name = tool.function.name or ""
+        if name.startswith(WEB_TOOL_PREFIX) and name not in NON_WEB_TOOL_NAMES:
+            return True
+    return False
 
 
 async def select_model_for_request(
@@ -49,6 +62,7 @@ async def select_model_for_request(
     rate_key: str | None = None,
     httpx_client: httpx.AsyncClient | None = None,
     androcles_prefetch: AndroclesPrefetch | None = None,
+    tools: list[Tool] | None = None,
 ) -> str:
     if has_capability(brave_capability, Capability.content_agent):
         model_cfg = get_model_config(model) if model in model_settings.models else None
@@ -80,14 +94,39 @@ async def select_model_for_request(
             rate_key, httpx_client=httpx_client
         )
 
-    selected = (
-        model_mapping["premium"] if treat_as_premium else model_mapping["non-premium"]
+    tier = "premium" if treat_as_premium else "non-premium"
+    selected = _resolve_triaged_model(model_mapping[tier])
+    if has_web_tools(tools) and not _supports_tools(selected):
+        return _select_tool_capable_model(tier, selected)
+    return selected
+
+
+def _resolve_triaged_model(model: str) -> str:
+    if model in model_settings.models and "models" in model_settings.models[model]:
+        return _resolve_weighted_model(model)
+    return model
+
+
+def _supports_tools(model: str) -> bool:
+    if model not in model_settings.models:
+        return False
+    model_cfg = get_model_config(model)
+    return bool(model_cfg and model_cfg.tool_support)
+
+
+def _select_tool_capable_model(tier: str, selected: str) -> str:
+    candidate = model_settings.model_triaging.get(TOOLS_TRIAGE_CATEGORY, {}).get(tier)
+    if candidate:
+        candidate = _resolve_triaged_model(candidate)
+        if _supports_tools(candidate):
+            return candidate
+    logger.error(
+        "Automatic model %r lacks tool support for web tools and MODEL_TRIAGING "
+        "has no tool-capable %r entry for %r; keeping the original selection.",
+        selected,
+        tier,
+        TOOLS_TRIAGE_CATEGORY,
     )
-    if (
-        selected in model_settings.models
-        and "models" in model_settings.models[selected]
-    ):
-        return _resolve_weighted_model(selected)
     return selected
 
 
