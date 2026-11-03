@@ -104,7 +104,7 @@ class TestHandleChatCompletions:
             _passthrough_model_selection(),
             patch("aichat.serve.services.api_key_chat.get_backend") as mock_get_backend,
             patch(
-                "aichat.serve.services.api_key_chat.apply_claude_upstream_sampling_params"
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
             ),
         ):
             backend = mock_get_backend.return_value
@@ -151,7 +151,7 @@ class TestHandleChatCompletions:
             _passthrough_model_selection(),
             patch("aichat.serve.services.api_key_chat.get_backend") as mock_get_backend,
             patch(
-                "aichat.serve.services.api_key_chat.apply_claude_upstream_sampling_params"
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
             ),
         ):
             backend = mock_get_backend.return_value
@@ -180,7 +180,7 @@ class TestHandleChatCompletions:
             _passthrough_model_selection(),
             patch("aichat.serve.services.api_key_chat.get_backend") as mock_get_backend,
             patch(
-                "aichat.serve.services.api_key_chat.apply_claude_upstream_sampling_params"
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
             ),
         ):
             backend = mock_get_backend.return_value
@@ -210,7 +210,7 @@ class TestHandleChatCompletions:
             ),
             patch("aichat.serve.services.api_key_chat.get_backend") as mock_get_backend,
             patch(
-                "aichat.serve.services.api_key_chat.apply_claude_upstream_sampling_params"
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
             ),
         ):
             backend = mock_get_backend.return_value

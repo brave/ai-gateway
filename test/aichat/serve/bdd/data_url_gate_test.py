@@ -10,7 +10,12 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from aichat.serve import api_key_chat_api, passthrough_api
 from aichat.serve.media_client import SandboxOpError, SandboxWorkerError
-from aichat.serve.services import api_key_chat, conversation_title
+from aichat.serve.services import (
+    api_key_chat,
+    chat_request,
+    conversation_title,
+    passthrough,
+)
 from aichat.serve.services import data_url_gate as gate
 from aichat.serve.services import pdf as pdf_service
 
@@ -206,7 +211,7 @@ def api_key_text_part(ctx, monkeypatch):
         AsyncMock(return_value="test-model"),
     )
     monkeypatch.setattr(
-        api_key_chat, "apply_claude_upstream_sampling_params", MagicMock()
+        chat_request, "apply_claude_upstream_sampling_params", MagicMock()
     )
 
     request = MagicMock(spec=Request)
@@ -249,7 +254,7 @@ def api_key_pdf_part(ctx, monkeypatch):
         AsyncMock(return_value="test-model"),
     )
     monkeypatch.setattr(
-        api_key_chat, "apply_claude_upstream_sampling_params", MagicMock()
+        chat_request, "apply_claude_upstream_sampling_params", MagicMock()
     )
 
     request = MagicMock(spec=Request)
@@ -289,7 +294,7 @@ def api_key_file_part(ctx, data_url, monkeypatch):
         AsyncMock(return_value="test-model"),
     )
     monkeypatch.setattr(
-        api_key_chat, "apply_claude_upstream_sampling_params", MagicMock()
+        chat_request, "apply_claude_upstream_sampling_params", MagicMock()
     )
 
     request = MagicMock(spec=Request)
@@ -314,7 +319,7 @@ def passthrough_file_part(ctx, data_url, monkeypatch):
     url = f"{data_url}{ctx['b64']}"
     _patch_inspect_pass_through(monkeypatch)
     backend, captured = _fake_backend_capture()
-    monkeypatch.setattr(passthrough_api, "get_backend", MagicMock(return_value=backend))
+    monkeypatch.setattr(passthrough, "get_backend", MagicMock(return_value=backend))
     monkeypatch.setattr(
         passthrough_api, "require_internal_models_api_key", lambda _: None
     )

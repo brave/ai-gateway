@@ -35,7 +35,8 @@ from aichat.protocol.open_ai_protocol import (
 )
 from aichat.protocol.open_ai_protocol import Request as OpenAIRequest
 from aichat.responses import InlineSearch, PromptInjectionScanResult
-from aichat.serve import open_ai_api
+from aichat.serve import mcp_tool_execution, open_ai_api
+from aichat.serve.services import search
 from test.aichat.serve.bdd.helpers import (
     client_tool_call_chunk,
     content_chunk,
@@ -455,9 +456,7 @@ def given_inline_search(monkeypatch):
     helper.pop_completed_searches.side_effect = [[inline], []]
     helper.handle_received_completion = MagicMock()
     helper.get_inline_search_chunks = AsyncMock(return_value=[inline])
-    monkeypatch.setattr(
-        open_ai_api, "InlineSearchHelper", MagicMock(return_value=helper)
-    )
+    monkeypatch.setattr(search, "InlineSearchHelper", MagicMock(return_value=helper))
 
 
 @when(
@@ -630,7 +629,9 @@ def when_mcp_event_and_result(ctx, monkeypatch):
             ToolMessage(role="tool", tool_call_id="call_1", content=ctx["tool_result"]),
         )
 
-    monkeypatch.setattr(open_ai_api, "execute_tools_and_stream_events", tool_events)
+    monkeypatch.setattr(
+        mcp_tool_execution, "execute_tools_and_stream_events", tool_events
+    )
     ctx["events"] = run_stream_pipeline(
         ctx,
         monkeypatch,

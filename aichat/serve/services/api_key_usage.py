@@ -154,6 +154,28 @@ async def read_stream_and_settle(
             await settle_usage(ctx, usage)
 
 
+async def settled_stream(
+    response: AsyncIterator, ctx: UsageContext | None
+) -> AsyncIterator[Any]:
+    chunks: asyncio.Queue = asyncio.Queue(maxsize=STREAM_BUFFER_SIZE)
+    disconnected = asyncio.Event()
+    reader = spawn(read_stream_and_settle(response, chunks, disconnected, ctx))
+    try:
+        while True:
+            chunk = await chunks.get()
+            if chunk is STREAM_END:
+                return
+            if isinstance(chunk, Exception):
+                raise chunk
+            yield chunk
+    finally:
+        disconnected.set()
+        while not chunks.empty():
+            chunks.get_nowait()
+        if ctx is None:
+            reader.cancel()
+
+
 # The settle has to run as a detached background task, and Python needs a strong
 # reference to that task so it isn't garbage-collected before it finishes.
 def spawn(coro: Coroutine[Any, Any, Any]) -> asyncio.Task:

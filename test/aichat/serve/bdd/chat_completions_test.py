@@ -11,7 +11,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from aichat.protocol.open_ai_protocol import Request as OpenAIRequest
 from aichat.protocol.open_ai_protocol import Tool, ToolFunction, UserMessage
 from aichat.responses import CompactionMetadata
-from aichat.serve import open_ai_api
+from aichat.serve import mcp_tool_execution, open_ai_api
 from aichat.serve.constants import CONTENT_FILTER_MESSAGE
 from aichat.serve.conversation_settings import conversation_settings
 from aichat.serve.external_service_settings import external_service_settings
@@ -372,7 +372,9 @@ def when_mcp_tool_call(result, ctx, monkeypatch):
     async def tool_events(*args, **kwargs):
         yield (None, ToolMessage(role="tool", tool_call_id="call_1", content=result))
 
-    monkeypatch.setattr(open_ai_api, "execute_tools_and_stream_events", tool_events)
+    monkeypatch.setattr(
+        mcp_tool_execution, "execute_tools_and_stream_events", tool_events
+    )
     ctx["events"] = run_stream_pipeline(
         ctx,
         monkeypatch,

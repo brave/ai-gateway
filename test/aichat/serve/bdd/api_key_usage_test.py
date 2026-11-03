@@ -138,7 +138,7 @@ async def _handle(ctx, *, stream: bool, disconnect: str | None = None) -> None:
         ),
         patch("aichat.serve.services.api_key_chat.get_backend", return_value=backend),
         patch(
-            "aichat.serve.services.api_key_chat.apply_claude_upstream_sampling_params"
+            "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
         ),
     ):
         handler = asyncio.create_task(

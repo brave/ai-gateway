@@ -1828,7 +1828,7 @@ class TestInlineSearchIntegration:
 
     @pytest.mark.asyncio
     @patch("aichat.serve.open_ai_api.security_settings")
-    @patch("aichat.serve.open_ai_api.InlineSearchHelper")
+    @patch("aichat.serve.services.search.InlineSearchHelper")
     async def test_inline_search_detection_in_streaming_response(
         self,
         mock_helper_class,
@@ -1864,7 +1864,7 @@ class TestInlineSearchIntegration:
 
     @pytest.mark.asyncio
     @patch("aichat.serve.open_ai_api.security_settings")
-    @patch("aichat.serve.open_ai_api.InlineSearchHelper")
+    @patch("aichat.serve.services.search.InlineSearchHelper")
     async def test_inline_search_multiple_results_emitted(
         self,
         mock_helper_class,
@@ -1930,7 +1930,7 @@ class TestInlineSearchIntegration:
 
     @pytest.mark.asyncio
     @patch("aichat.serve.open_ai_api.security_settings")
-    @patch("aichat.serve.open_ai_api.InlineSearchHelper")
+    @patch("aichat.serve.services.search.InlineSearchHelper")
     async def test_inline_search_handle_completion_called_per_chunk(
         self,
         mock_helper_class,
@@ -1973,7 +1973,7 @@ class TestInlineSearchIntegration:
 
     @pytest.mark.asyncio
     @patch("aichat.serve.open_ai_api.security_settings")
-    @patch("aichat.serve.open_ai_api.InlineSearchHelper")
+    @patch("aichat.serve.services.search.InlineSearchHelper")
     async def test_inline_search_no_results_when_no_patterns(
         self,
         mock_helper_class,
@@ -2135,7 +2135,7 @@ class TestInlineSearchIntegration:
 
     @pytest.mark.asyncio
     @patch("aichat.serve.open_ai_api.security_settings")
-    @patch("aichat.serve.open_ai_api.InlineSearchHelper")
+    @patch("aichat.serve.services.search.InlineSearchHelper")
     async def test_inline_search_content_passed_to_helper(
         self,
         mock_helper_class,
