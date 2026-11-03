@@ -128,14 +128,18 @@ async def _handle(ctx, *, stream: bool, disconnect: str | None = None) -> None:
         backend.converse = AsyncMock(side_effect=converse)
 
     with (
-        patch("aichat.serve.api_key_chat_api.run_dynamic_leo", new_callable=AsyncMock),
         patch(
-            "aichat.serve.api_key_chat_api.select_model_for_request",
+            "aichat.serve.services.api_key_chat.run_dynamic_leo", new_callable=AsyncMock
+        ),
+        patch(
+            "aichat.serve.services.api_key_chat.select_model_for_request",
             new_callable=AsyncMock,
             side_effect=lambda model, **_: model,
         ),
-        patch("aichat.serve.api_key_chat_api.get_backend", return_value=backend),
-        patch("aichat.serve.api_key_chat_api.apply_claude_upstream_sampling_params"),
+        patch("aichat.serve.services.api_key_chat.get_backend", return_value=backend),
+        patch(
+            "aichat.serve.services.api_key_chat.apply_claude_upstream_sampling_params"
+        ),
     ):
         handler = asyncio.create_task(
             api_key_chat_api.handle_chat_completions(_request(body), API_KEY)
