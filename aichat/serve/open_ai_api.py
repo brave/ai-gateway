@@ -257,6 +257,8 @@ async def v1_chat_completions(
     except UnsupportedContentError as e:
         return create_error_response(ErrorCode.BAD_REQUEST_ERROR, str(e), api_version=2)
 
+    request.messages = await remove_unprocessed_attachments(request.messages)
+
     if not model_config.tool_support and request.tools:
         request.tools = None
 
@@ -339,11 +341,13 @@ async def v1_chat_completions(
         dynamic_leo=dynamic_leo_prefetch,
     )
 
+    request.messages = await enforce_pdf_limits(
+        request.messages, model_config, is_premium
+    )
     messages = await augment_messages(
         messages=request.messages,
         tools=tools,
         model_config=model_config,
-        is_premium=is_premium,
         brave_capability=request.brave_capability,
     )
 
@@ -447,11 +451,41 @@ async def v1_chat_completions(
         return response
 
 
+def _rebuild_messages(
+    messages: list[MessageUnion], processed: list[dict], original: list[dict]
+) -> list[MessageUnion]:
+    if processed == original:
+        return messages
+    return [message_adapter.validate_python(m) for m in processed]
+
+
+async def remove_unprocessed_attachments(
+    messages: list[MessageUnion],
+) -> list[MessageUnion]:
+    """Apply the data URL gate to the request's own message list."""
+    original = [m.model_dump(exclude_none=True) for m in messages]
+    processed = await remove_unprocessed_data_url_parts(original)
+    return _rebuild_messages(messages, processed, original)
+
+
+async def enforce_pdf_limits(
+    messages: list[MessageUnion], model_config: ModelConfig, is_premium: bool
+) -> list[MessageUnion]:
+    """Run the PDF sandbox flow on the request's own message list."""
+    token_limit = (
+        model_config.conversation_token_limit_premium
+        if is_premium
+        else model_config.conversation_token_limit
+    )
+    original = [m.model_dump(exclude_none=True) for m in messages]
+    processed = await process_messages_for_pdf_limits(original, token_limit)
+    return _rebuild_messages(messages, processed, original)
+
+
 async def augment_messages(
     messages: list[MessageUnion],
     tools: list[Tool],
     model_config: ModelConfig,
-    is_premium: bool = False,
     brave_capability: CapabilityOptions = None,
 ) -> list[dict]:
     """
@@ -461,7 +495,6 @@ async def augment_messages(
         messages: List of message objects
         tools: List of tools for the conversation
         model_config: Model configuration
-        is_premium: Whether the user has premium access
         brave_capability: Capabilities advertised by the client, used by
             prompts to gate directives on client support
 
@@ -471,14 +504,6 @@ async def augment_messages(
     messages_dict = []
     for message in messages:
         messages_dict.append(message.model_dump(exclude_none=True))
-
-    token_limit = (
-        model_config.conversation_token_limit_premium
-        if is_premium
-        else model_config.conversation_token_limit
-    )
-    messages_dict = await remove_unprocessed_data_url_parts(messages_dict)
-    messages_dict = await process_messages_for_pdf_limits(messages_dict, token_limit)
 
     for prompt in prompts.prompts:
         messages_dict = prompt.augment(
@@ -540,11 +565,13 @@ async def _stream_with_compaction(
             dynamic_leo=dynamic_leo,
         )
 
+        request.messages = await enforce_pdf_limits(
+            request.messages, model_config, is_premium
+        )
         messages = await augment_messages(
             messages=request.messages,
             tools=tools,
             model_config=model_config,
-            is_premium=is_premium,
             brave_capability=request.brave_capability,
         )
 
