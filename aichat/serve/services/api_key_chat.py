@@ -33,7 +33,6 @@ class ApiKeyCapability(StrEnum):
     chat = "chat"
     web_search = "web_search"
     deep_research = "deep_research"
-    embeddings = "embeddings"
 
 
 DEFAULT_API_KEY_CAPABILITIES: frozenset[str] = frozenset({ApiKeyCapability.chat})
