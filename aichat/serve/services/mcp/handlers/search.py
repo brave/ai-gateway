@@ -17,8 +17,6 @@ from aichat.serve.services.mcp.registry import (
 
 logger = logging.getLogger(__name__)
 
-SEARCH_TOOL_NAMES = frozenset({"brave_web_search", "brave_news_search"})
-
 
 class SearchServerHandler(MCPServerHandler):
     """Handler for search MCP server results."""

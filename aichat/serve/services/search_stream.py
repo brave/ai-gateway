@@ -12,7 +12,6 @@ from aichat.serve.mcp_tool_execution import (
     build_tool_followup_messages,
     run_mcp_tool_round,
 )
-from aichat.serve.services.mcp.handlers.search import SEARCH_TOOL_NAMES
 from aichat.serve.services.mcp.mcp_settings import mcp_settings
 from aichat.serve.services.models import ModelConfig
 from aichat.serve.services.search import InlineSearchStream
@@ -21,6 +20,7 @@ from aichat.serve.tool_parser import ToolCallAccumulator, parse_streaming_tool_c
 logger = logging.getLogger(__name__)
 
 _MAX_TOOL_ROUNDS = 5
+SEARCH_TOOL_NAMES = frozenset({"brave_web_search"})
 
 NextRound = Callable[[list[dict]], Awaitable[AsyncIterator | None]]
 OnChunk = Callable[[Any], Any | None]
