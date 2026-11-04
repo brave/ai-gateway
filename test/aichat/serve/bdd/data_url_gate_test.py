@@ -41,6 +41,12 @@ def _file_part(url: str, filename: str = "a.bin") -> dict:
     return {"type": "file", "file": {"filename": filename, "file_data": url}}
 
 
+def _attachment_part(part_type: str, url: str) -> dict:
+    if part_type == "file":
+        return _file_part(url)
+    return {"type": part_type, part_type: {"url": url}}
+
+
 class _FakeAnalyzer:
     def __init__(self, result=None, error=None):
         self.result = result
@@ -145,6 +151,18 @@ def gate_runs(ctx, data_url, monkeypatch):
     return ctx
 
 
+@when(parsers.parse('the gate runs on a "{part_type}" part with a "{data_url}" url'))
+def gate_runs_on_url_part(ctx, part_type, data_url, monkeypatch):
+    verdict = ctx.get("verdict", "rejects the payload")
+    _patch_inspect(monkeypatch, verdict)
+    part = _attachment_part(part_type, f"{data_url}{ctx['b64']}")
+    ctx["message"] = {"role": "user", "content": [part]}
+    ctx["result"] = asyncio.run(
+        gate.remove_unprocessed_data_url_parts([ctx["message"]])
+    )
+    return ctx
+
+
 @given("the media processor confirms a safe binary payload")
 def processor_confirms(ctx):
     ctx["verdict"] = "confirms a safe binary payload"
@@ -166,7 +184,7 @@ def processor_unavailable(ctx):
 @then("the part is kept")
 def part_kept(ctx):
     parts = ctx["result"][0]["content"]
-    assert len(parts) == 1 and parts[0].get("type") == "file", parts
+    assert parts == ctx["message"]["content"], parts
 
 
 @then("the part is removed")
@@ -312,8 +330,12 @@ def api_key_file_part(ctx, data_url, monkeypatch):
     return ctx
 
 
-@when(parsers.parse('a passthrough request with a "{data_url}" file part is handled'))
-def passthrough_file_part(ctx, data_url, monkeypatch):
+@when(
+    parsers.parse(
+        'a passthrough request with a "{data_url}" {part_type} part is handled'
+    )
+)
+def passthrough_file_part(ctx, data_url, part_type, monkeypatch):
     from fastapi.requests import Request
 
     url = f"{data_url}{ctx['b64']}"
@@ -328,7 +350,9 @@ def passthrough_file_part(ctx, data_url, monkeypatch):
     request.json = AsyncMock(
         return_value={
             "model": "test-model",
-            "messages": [{"role": "user", "content": [_file_part(url)]}],
+            "messages": [
+                {"role": "user", "content": [_attachment_part(part_type, url)]}
+            ],
         }
     )
     request.headers = {}

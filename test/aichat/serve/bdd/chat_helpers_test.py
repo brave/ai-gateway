@@ -353,14 +353,16 @@ def when_augmented(access, ctx, monkeypatch):
     model_config = MagicMock()
     model_config.conversation_token_limit = ctx.get("token_limit_free")
     model_config.conversation_token_limit_premium = ctx.get("token_limit_premium")
-    ctx["augmented"] = asyncio.run(
-        open_ai_api.augment_messages(
-            messages=ctx["augment_messages"],
-            tools=[],
-            model_config=model_config,
-            is_premium=is_premium,
+
+    async def run():
+        messages = await open_ai_api.enforce_pdf_limits(
+            ctx["augment_messages"], model_config, is_premium
         )
-    )
+        return await open_ai_api.augment_messages(
+            messages=messages, tools=[], model_config=model_config
+        )
+
+    ctx["augmented"] = asyncio.run(run())
 
 
 @then(parsers.parse('the augmented messages contain "{marker}"'))

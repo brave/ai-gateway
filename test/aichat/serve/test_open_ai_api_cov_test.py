@@ -281,6 +281,11 @@ async def test_stream_with_compaction_happy_path_near_api_key():
             "prepare_tools_for_request",
             new=AsyncMock(return_value=([], [], MagicMock())),
         ),
+        patch.object(
+            open_ai_api,
+            "enforce_pdf_limits",
+            new=AsyncMock(side_effect=lambda messages, *_: messages),
+        ),
         patch.object(open_ai_api, "augment_messages", new=AsyncMock(return_value=[])),
         patch.object(
             open_ai_api, "simplify_messages_for_llm", new=Mock(side_effect=lambda m: m)
