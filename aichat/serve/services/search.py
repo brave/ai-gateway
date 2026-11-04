@@ -14,6 +14,14 @@ from aichat.serve.services.search_settings import search_settings
 
 logger = logging.getLogger(__name__)
 
+
+# Lazy import to avoid circular dependency with open_ai_api
+def _get_create_openai_response():
+    from aichat.serve.open_ai_api import create_openai_response
+
+    return create_openai_response
+
+
 _headers = {
     "Accept": "application/json",
     "Accept-Encoding": "gzip",
@@ -157,3 +165,31 @@ class InlineSearchHelper:
                 continue
             chunks.append(result)
         return chunks
+
+
+class InlineSearchStream:
+    def __init__(self):
+        self._client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=1.0, read=2.0, write=1.0, pool=1.0)
+        )
+        self._helper = InlineSearchHelper(self._client)
+
+    def feed(self, accumulated_completion: str) -> None:
+        self._helper.handle_received_completion(accumulated_completion)
+
+    def pop_events(self) -> list[str | None]:
+        create_openai_response = _get_create_openai_response()
+        return [
+            create_openai_response(search)
+            for search in self._helper.pop_completed_searches()
+        ]
+
+    async def drain_events(self) -> list[str | None]:
+        create_openai_response = _get_create_openai_response()
+        return [
+            create_openai_response(search)
+            for search in await self._helper.get_inline_search_chunks()
+        ]
+
+    async def aclose(self) -> None:
+        await self._client.aclose()

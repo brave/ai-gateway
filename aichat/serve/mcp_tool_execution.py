@@ -68,6 +68,83 @@ def may_run_streaming_tool(
     return True
 
 
+async def split_tool_calls(tool_calls: list, mcp_executor) -> tuple[list, list]:
+    """Split tool calls into (server-side MCP calls, client-side calls)."""
+    mcp_tool_calls = []
+    client_tool_calls = []
+    for tool_call in tool_calls:
+        if tool_call.function_name not in STREAMING_TOOLS and (
+            await mcp_executor.is_mcp_tool(tool_call.function_name)
+        ):
+            mcp_tool_calls.append(tool_call)
+        else:
+            client_tool_calls.append(tool_call)
+    return mcp_tool_calls, client_tool_calls
+
+
+async def run_mcp_tool_round(
+    mcp_tool_calls: list,
+    mcp_executor,
+    conversation_log_id: str,
+    actual_model: str,
+    request_model: str,
+    tool_result_messages: list,
+) -> AsyncIterator[str]:
+    """Execute MCP tool calls, yielding SSE events and collecting tool results."""
+    async for event_str, output_or_message in execute_tools_and_stream_events(
+        mcp_tool_calls,
+        mcp_executor,
+        conversation_log_id,
+        actual_model,
+        request_model,
+    ):
+        if event_str:
+            yield event_str
+        if not output_or_message:
+            continue
+        if isinstance(output_or_message, dict):
+            yield f"data: {json.dumps(output_or_message, separators=(',', ':'))}\n\n"
+        else:
+            tool_result_messages.append(output_or_message)
+
+
+def build_tool_followup_messages(
+    messages: list,
+    assistant_tool_calls: list,
+    mcp_tool_calls: list,
+    tool_result_messages: list,
+) -> list[dict]:
+    """Conversation for the follow-up model call after MCP tools ran."""
+    mcp_tool_names = {tool_call.function_name for tool_call in mcp_tool_calls}
+    followup_messages = [
+        (
+            message.model_dump(exclude_none=True)
+            if hasattr(message, "model_dump")
+            else message
+        )
+        for message in messages
+    ]
+    assistant_message = AssistantMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            tool_call
+            for tool_call in assistant_tool_calls
+            if tool_call.function.name in mcp_tool_names
+        ],
+    )
+    followup_messages.append(assistant_message.model_dump(exclude_none=True))
+    followup_messages.extend(
+        (
+            simplify_tool_message_for_llm(message)
+            if hasattr(message, "model_dump")
+            else message
+        )
+        for message in tool_result_messages
+    )
+    return followup_messages
+
+
 async def execute_tools_and_stream_events(
     tool_calls: list,
     mcp_executor,

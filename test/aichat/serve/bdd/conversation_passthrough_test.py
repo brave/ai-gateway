@@ -26,6 +26,7 @@ from aichat.serve import passthrough_api
 from aichat.serve.api_server import app
 from aichat.serve.constants import CONVERSATION_API_DEPRECATION_MESSAGES
 from aichat.serve.conversation_api import get_conversation_deprecation_message
+from aichat.serve.services import chat_request, passthrough
 
 FEATURE = Path(__file__).parent / "features" / "conversation_passthrough.feature"
 scenarios(str(FEATURE))
@@ -56,10 +57,10 @@ def _stub_backend(monkeypatch, ctx, converse_return):
     backend.config.upstream_model = "casperhansen/mixtral-instruct-awq"
     backend.converse = AsyncMock(return_value=converse_return)
     get_backend = MagicMock(return_value=backend)
-    monkeypatch.setattr(passthrough_api, "get_backend", get_backend)
+    monkeypatch.setattr(passthrough, "get_backend", get_backend)
     apply_sampling = MagicMock()
     monkeypatch.setattr(
-        passthrough_api, "apply_claude_upstream_sampling_params", apply_sampling
+        chat_request, "apply_claude_upstream_sampling_params", apply_sampling
     )
     ctx["backend"] = backend
     ctx["apply_sampling"] = apply_sampling
@@ -182,7 +183,7 @@ def given_passthrough_problem(problem, monkeypatch, ctx):
             "stream": False,
         }
         get_backend = MagicMock(side_effect=ValueError("Unsupported backend"))
-        monkeypatch.setattr(passthrough_api, "get_backend", get_backend)
+        monkeypatch.setattr(passthrough, "get_backend", get_backend)
         ctx["get_backend"] = get_backend
 
 

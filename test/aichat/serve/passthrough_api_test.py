@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException, Request
 
 from aichat.serve import passthrough_api
+from aichat.serve.services import passthrough
 
 
 @pytest.fixture
@@ -31,7 +32,7 @@ class TestV1Passthrough:
         }
         with (
             patch(
-                "aichat.serve.passthrough_api.get_backend",
+                "aichat.serve.services.passthrough.get_backend",
                 side_effect=ValueError("unknown model"),
             ),
             pytest.raises(HTTPException) as exc,
@@ -47,8 +48,10 @@ class TestV1Passthrough:
         }
         mock_response = MagicMock()
         with (
-            patch("aichat.serve.passthrough_api.get_backend") as mock_get_backend,
-            patch("aichat.serve.passthrough_api.apply_claude_upstream_sampling_params"),
+            patch("aichat.serve.services.passthrough.get_backend") as mock_get_backend,
+            patch(
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
+            ),
         ):
             backend = mock_get_backend.return_value
             backend.config.upstream_model = "claude"
@@ -65,8 +68,10 @@ class TestV1Passthrough:
         }
         error_dict = {"type": "error", "code": 50000, "content": "boom"}
         with (
-            patch("aichat.serve.passthrough_api.get_backend") as mock_get_backend,
-            patch("aichat.serve.passthrough_api.apply_claude_upstream_sampling_params"),
+            patch("aichat.serve.services.passthrough.get_backend") as mock_get_backend,
+            patch(
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
+            ),
         ):
             backend = mock_get_backend.return_value
             backend.config.upstream_model = "claude"
@@ -88,8 +93,10 @@ class TestV1Passthrough:
             yield MagicMock()
 
         with (
-            patch("aichat.serve.passthrough_api.get_backend") as mock_get_backend,
-            patch("aichat.serve.passthrough_api.apply_claude_upstream_sampling_params"),
+            patch("aichat.serve.services.passthrough.get_backend") as mock_get_backend,
+            patch(
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
+            ),
         ):
             backend = mock_get_backend.return_value
             backend.config.upstream_model = "claude"
@@ -108,7 +115,7 @@ class TestStreamChunks:
         async def gen():
             yield chunk
 
-        out = [c async for c in passthrough_api._stream_chunks(gen())]
+        out = [c async for c in passthrough._stream_chunks(gen())]
         assert out[-1] == "data: [DONE]\n\n"
 
     @pytest.mark.asyncio
@@ -119,5 +126,5 @@ class TestStreamChunks:
         async def gen():
             yield chunk
 
-        out = [c async for c in passthrough_api._stream_chunks(gen())]
+        out = [c async for c in passthrough._stream_chunks(gen())]
         assert out == ["data: [DONE]\n\n"]

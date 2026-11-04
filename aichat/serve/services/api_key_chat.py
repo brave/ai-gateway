@@ -1,29 +1,26 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 
 from fastapi.responses import JSONResponse, StreamingResponse
-from openai.types.chat import CompletionCreateParams
-from pydantic import TypeAdapter
 from starlette.requests import Request
 
-from aichat.protocol.open_ai_protocol import MessageUnion
-from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
 from aichat.serve.internal_settings import internal_settings
 from aichat.serve.open_ai_api import detect_media_content, get_last_user_message_content
 from aichat.serve.services import api_key_usage
 from aichat.serve.services.backend import get_backend
-from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
+from aichat.serve.services.chat_request import (
+    build_backend_params,
+    parse_chat_request,
+    parse_messages,
+    prepare_messages,
+)
 from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
 from aichat.serve.services.model_selection import select_model_for_request
-from aichat.serve.services.pdf import process_messages_for_pdf_limits
 from aichat.serve.utils import get_real_ip
 
 logger = logging.getLogger(__name__)
-
-_request_adapter = TypeAdapter(CompletionCreateParams)
-_message_adapter = TypeAdapter(MessageUnion)
-_PASSTHROUGH_EXCLUDE = {"model", "messages", "stream"}
 
 
 def openai_error_response(
@@ -43,18 +40,8 @@ async def _stream_completion_chunks(
     usage_ctx: api_key_usage.UsageContext | None = None,
     include_usage: bool = True,
 ) -> AsyncIterator[str]:
-    chunks: asyncio.Queue = asyncio.Queue(maxsize=api_key_usage.STREAM_BUFFER_SIZE)
-    disconnected = asyncio.Event()
-    reader = api_key_usage.spawn(
-        api_key_usage.read_stream_and_settle(response, chunks, disconnected, usage_ctx)
-    )
-    try:
-        while True:
-            chunk = await chunks.get()
-            if chunk is api_key_usage.STREAM_END:
-                break
-            if isinstance(chunk, Exception):
-                raise chunk
+    async with aclosing(api_key_usage.settled_stream(response, usage_ctx)) as chunks:
+        async for chunk in chunks:
             if getattr(chunk, "usage", None) is not None and not include_usage:
                 if not chunk.choices:
                     continue
@@ -64,53 +51,22 @@ async def _stream_completion_chunks(
                 yield f"data: {chunk.model_dump_json()}\n\n"
             except Exception as e:
                 logger.warning(f"Failed to serialize chunk: {e}")
-        yield "data: [DONE]\n\n"
-    finally:
-        disconnected.set()
-        while not chunks.empty():
-            chunks.get_nowait()
-        if usage_ctx is None:
-            reader.cancel()
+    yield "data: [DONE]\n\n"
 
 
 async def handle_chat_completions(request: Request, api_key: str | None = None):
     logger.debug("api_key_chat /chat/completions")
     try:
-        body = await request.json()
-        chat_request = _request_adapter.validate_python(body)
+        chat_request = parse_chat_request(await request.json())
     except Exception as e:
         return openai_error_response(400, str(e), "invalid_request_error")
 
-    enable_prompt_caching = body.get("prompt_caching")
-    if enable_prompt_caching is not None and not isinstance(
-        enable_prompt_caching, bool
-    ):
-        return openai_error_response(
-            400, "prompt_caching must be a boolean", "invalid_request_error"
-        )
-
     try:
-        model = str(chat_request["model"])
-        # Validate the RAW body messages once: outer CompletionCreateParams
-        # validation exhausts the lazy content iterators, so messages taken
-        # from chat_request re-validate/dump to empty content. Raw dicts
-        # validate cleanly and model_dump strips extra keys (file_id/format).
-        protocol_messages = [
-            _message_adapter.validate_python(message) for message in body["messages"]
-        ]
-        messages = [m.model_dump(exclude_none=True) for m in protocol_messages]
-        messages = await remove_unprocessed_data_url_parts(messages)
-        messages = await process_messages_for_pdf_limits(messages, None)
-        stream = bool(chat_request.get("stream"))
-        extra_params = {
-            key: value
-            for key, value in chat_request.items()
-            if key not in _PASSTHROUGH_EXCLUDE and value is not None
-        }
-        tools = list(extra_params.pop("tools", None) or [])
+        protocol_messages = parse_messages(chat_request)
+        messages = await prepare_messages(protocol_messages)
         dynamic_leo_prefetch = await run_dynamic_leo(protocol_messages)
         model = await select_model_for_request(
-            model=model,
+            model=chat_request.model,
             messages=protocol_messages,
             is_premium=False,
             last_user_message_content=get_last_user_message_content(protocol_messages),
@@ -121,26 +77,15 @@ async def handle_chat_completions(request: Request, api_key: str | None = None):
         )
 
         backend = get_backend(model)
-
-        params = backend.build_params(
-            stream=stream,
-            tools=tools,
-            messages=messages,
-            enable_prompt_caching=enable_prompt_caching,
-        )
-        for key in ("temperature", "top_p", "stop"):
-            if key not in extra_params:
-                params.pop(key, None)
-        params.update(extra_params)
+        params = build_backend_params(backend, chat_request, messages)
         include_usage = bool(
-            (extra_params.get("stream_options") or {}).get("include_usage")
+            (chat_request.extra_params.get("stream_options") or {}).get("include_usage")
         )
-        if stream:
+        if chat_request.stream:
             params["stream_options"] = {
                 **(params.get("stream_options") or {}),
                 "include_usage": True,
             }
-        apply_claude_upstream_sampling_params(backend.config.upstream_model, params)
 
         usage_ctx = None
         if api_key is not None and internal_settings.internal_api_enabled:
@@ -148,8 +93,8 @@ async def handle_chat_completions(request: Request, api_key: str | None = None):
                 request.state.httpx_client, api_key, model, backend.config
             )
 
-        converse = backend.converse(messages, stream=stream, params=params)
-        if stream:
+        converse = backend.converse(messages, stream=chat_request.stream, params=params)
+        if chat_request.stream:
             response = await converse
         else:
             response = await asyncio.shield(
@@ -168,7 +113,7 @@ async def handle_chat_completions(request: Request, api_key: str | None = None):
             "internal_error",
         )
 
-    if stream:
+    if chat_request.stream:
         return StreamingResponse(
             _stream_completion_chunks(response, model, usage_ctx, include_usage),
             media_type="text/event-stream",
