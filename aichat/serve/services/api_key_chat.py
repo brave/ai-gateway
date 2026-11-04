@@ -148,7 +148,7 @@ async def handle_chat_completions(
         return openai_error_response(400, str(e), "invalid_request_error")
 
     if (
-        chat_request.wants_search
+        chat_request.search_enabled
         and ApiKeyCapability.web_search not in key_capabilities
     ):
         return openai_error_response(
@@ -208,7 +208,7 @@ async def handle_chat_completions(
             "internal_error",
         )
 
-    if chat_request.wants_search:
+    if chat_request.search_enabled:
         return StreamingResponse(
             _search_stream(
                 request,

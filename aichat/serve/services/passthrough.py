@@ -85,7 +85,7 @@ async def handle_passthrough(request: Request):
     )
     _raise_for_error(response)
 
-    if chat_request.wants_search:
+    if chat_request.search_enabled:
         return StreamingResponse(
             _search_stream(
                 response, backend, chat_request, messages, search_tools, executor

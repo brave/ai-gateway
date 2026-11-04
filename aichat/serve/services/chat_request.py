@@ -27,7 +27,7 @@ class ChatRequest:
     search_tools: bool = False
 
     @property
-    def wants_search(self) -> bool:
+    def search_enabled(self) -> bool:
         return self.inline_search or self.search_tools
 
 
