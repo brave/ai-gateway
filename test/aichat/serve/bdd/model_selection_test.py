@@ -18,6 +18,8 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from aichat.protocol.open_ai_protocol import (
     Capability,
     TextContentPart,
+    Tool,
+    ToolFunction,
 )
 from aichat.serve.services import model_selection
 from aichat.serve.services import models as services_models
@@ -71,6 +73,38 @@ def given_agent_default(default_model, monkeypatch, ctx):
 def given_model_exists(model_id, monkeypatch, ctx):
     ctx.setdefault("models", {})[model_id] = {"type": "llm", "capabilities": []}
     _install_settings(monkeypatch, ctx)
+
+
+@given(
+    parsers.re(
+        r'model "(?P<model_id>[^"]+)" (?P<support>with|without) web tool support'
+    )
+)
+def given_web_tool_support_model(model_id, support, monkeypatch, ctx):
+    capabilities = ["tools", "content_agent"] if support == "with" else []
+    ctx.setdefault("models", {})[model_id] = {
+        "type": "llm",
+        "capabilities": capabilities,
+    }
+    _install_settings(monkeypatch, ctx)
+
+
+@given(parsers.parse('model "{model_id}" with only capability "{capability}"'))
+def given_single_capability_model(model_id, capability, monkeypatch, ctx):
+    ctx.setdefault("models", {})[model_id] = {
+        "type": "llm",
+        "capabilities": [capability],
+    }
+    _install_settings(monkeypatch, ctx)
+
+
+@given(parsers.parse('the client sends tools "{names}"'))
+def given_client_tools(names, ctx):
+    ctx["tools"] = [
+        Tool(type="function", function=ToolFunction(name=name.strip()))
+        for name in names.split(",")
+        if name.strip() != "none"
+    ]
 
 
 @given(parsers.parse('model "{model_id}" with weighted members "{members}"'))
@@ -300,6 +334,7 @@ def when_select_premium(model, ctx):
             last_user_message_content=ctx.get("last_user_message"),
             media_type=ctx.get("media_type"),
             androcles_prefetch=ctx.get("prefetch"),
+            tools=ctx.get("tools"),
         )
     )
 
@@ -308,7 +343,7 @@ def when_select_premium(model, ctx):
 def when_select_free(model, ctx):
     ctx["selected"] = asyncio.run(
         model_selection.select_model_for_request(
-            model=model, messages=ctx.get("messages", [])
+            model=model, messages=ctx.get("messages", []), tools=ctx.get("tools")
         )
     )
 
@@ -422,6 +457,14 @@ def then_picker_weights(ctx, weights):
 @then("the daily count was incremented")
 def then_daily_incremented(ctx):
     ctx["daily_counter"].assert_awaited_once()
+
+
+@then("a missing tool-capable model error is logged")
+def then_missing_tool_model_logged(caplog):
+    assert any(
+        record.levelname == "ERROR" and "lacks tool support" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 @then(
