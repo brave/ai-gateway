@@ -141,13 +141,13 @@ Feature: Model selection for chat requests
     Then the selected model is "premium-a"
     And androcles classified the last user message
 
-  Scenario Outline: Automatic requests with web tools avoid models without tool support
+  Scenario Outline: Automatic requests with web tools avoid models without web tool support
     Given triaging default premium "premium-a" and non-premium "free-a"
     And triaging tools premium "premium-tools" and non-premium "free-tools"
-    And model "premium-a" without tool support
-    And model "free-a" without tool support
-    And model "premium-tools" with tool support
-    And model "free-tools" with tool support
+    And model "premium-a" without web tool support
+    And model "free-a" without web tool support
+    And model "premium-tools" with web tool support
+    And model "free-tools" with web tool support
     And the client sends tools "web_click_button, get_weather"
     When a model is selected for "automatic" <access>
     Then the selected model is "<expected>"
@@ -160,17 +160,31 @@ Feature: Model selection for chat requests
   Scenario: Automatic requests with web tools keep a triaged model that supports tools
     Given triaging default premium "premium-a" and non-premium "free-a"
     And triaging tools premium "premium-tools" and non-premium "free-tools"
-    And model "premium-a" with tool support
-    And model "premium-tools" with tool support
+    And model "premium-a" with web tool support
+    And model "premium-tools" with web tool support
     And the client sends tools "web_click_button"
     When a model is selected for "automatic" with premium access
     Then the selected model is "premium-a"
 
+  Scenario Outline: Web tools reroute models that lack either tools or content agent support
+    Given triaging default premium "premium-a" and non-premium "free-a"
+    And triaging tools premium "premium-tools" and non-premium "free-tools"
+    And model "premium-a" with only capability "<capability>"
+    And model "premium-tools" with web tool support
+    And the client sends tools "web_click_button"
+    When a model is selected for "automatic" with premium access
+    Then the selected model is "premium-tools"
+
+    Examples:
+      | capability    |
+      | tools         |
+      | content_agent |
+
   Scenario Outline: Automatic requests without web tools are not rerouted
     Given triaging default premium "premium-a" and non-premium "free-a"
     And triaging tools premium "premium-tools" and non-premium "free-tools"
-    And model "premium-a" without tool support
-    And model "premium-tools" with tool support
+    And model "premium-a" without web tool support
+    And model "premium-tools" with web tool support
     And the client sends tools "<tools>"
     When a model is selected for "automatic" with premium access
     Then the selected model is "premium-a"
@@ -183,8 +197,8 @@ Feature: Model selection for chat requests
 
   Scenario: Explicit models with web tools pass through unchanged
     Given triaging tools premium "premium-tools" and non-premium "free-tools"
-    And model "basic" without tool support
-    And model "premium-tools" with tool support
+    And model "basic" without web tool support
+    And model "premium-tools" with web tool support
     And the client sends tools "web_click_button"
     When a model is selected for "basic" with premium access
     Then the selected model is "basic"
@@ -192,9 +206,9 @@ Feature: Model selection for chat requests
   Scenario: Web tools resolve a tools ensemble to a tool-capable member
     Given triaging default premium "premium-a" and non-premium "free-a"
     And triaging tools premium "tools-ensemble" and non-premium "free-tools"
-    And model "premium-a" without tool support
+    And model "premium-a" without web tool support
     And model "tools-ensemble" with weighted members "tool-member:90, other-member:10"
-    And model "tool-member" with tool support
+    And model "tool-member" with web tool support
     And the random source favors the first option
     And the client sends tools "web_click_button"
     When a model is selected for "automatic" with premium access
@@ -204,8 +218,8 @@ Feature: Model selection for chat requests
     Given triaging default premium "default-ensemble" and non-premium "free-a"
     And triaging tools premium "premium-tools" and non-premium "free-tools"
     And model "default-ensemble" with weighted members "plain-member:90, tool-member:10"
-    And model "plain-member" without tool support
-    And model "premium-tools" with tool support
+    And model "plain-member" without web tool support
+    And model "premium-tools" with web tool support
     And the random source favors the first option
     And the client sends tools "web_click_button"
     When a model is selected for "automatic" with premium access
@@ -213,17 +227,17 @@ Feature: Model selection for chat requests
 
   Scenario: Web tools without a tools triage entry keep the triaged model
     Given triaging default premium "premium-a" and non-premium "free-a"
-    And model "premium-a" without tool support
+    And model "premium-a" without web tool support
     And the client sends tools "web_click_button"
     When a model is selected for "automatic" with premium access
     Then the selected model is "premium-a"
     And a missing tool-capable model error is logged
 
-  Scenario: Web tools keep the triaged model when the tools entry lacks tool support
+  Scenario: Web tools keep the triaged model when the tools entry lacks web tool support
     Given triaging default premium "premium-a" and non-premium "free-a"
     And triaging tools premium "premium-tools" and non-premium "free-tools"
-    And model "premium-a" without tool support
-    And model "premium-tools" without tool support
+    And model "premium-a" without web tool support
+    And model "premium-tools" without web tool support
     And the client sends tools "web_click_button"
     When a model is selected for "automatic" with premium access
     Then the selected model is "premium-a"
@@ -232,7 +246,7 @@ Feature: Model selection for chat requests
   Scenario: Web tools keep the triaged model when the tools entry is not configured
     Given triaging default premium "premium-a" and non-premium "free-a"
     And triaging tools premium "unknown-model" and non-premium "free-tools"
-    And model "premium-a" without tool support
+    And model "premium-a" without web tool support
     And the client sends tools "web_click_button"
     When a model is selected for "automatic" with premium access
     Then the selected model is "premium-a"

@@ -96,8 +96,8 @@ async def select_model_for_request(
 
     tier = "premium" if treat_as_premium else "non-premium"
     selected = _resolve_triaged_model(model_mapping[tier])
-    if has_web_tools(tools) and not _supports_tools(selected):
-        return _select_tool_capable_model(tier, selected)
+    if has_web_tools(tools) and not _supports_web_tools(selected):
+        return _select_web_tool_capable_model(tier, selected)
     return selected
 
 
@@ -107,18 +107,20 @@ def _resolve_triaged_model(model: str) -> str:
     return model
 
 
-def _supports_tools(model: str) -> bool:
+def _supports_web_tools(model: str) -> bool:
     if model not in model_settings.models:
         return False
     model_cfg = get_model_config(model)
-    return bool(model_cfg and model_cfg.tool_support)
+    return bool(
+        model_cfg and model_cfg.tool_support and model_cfg.content_agent_support
+    )
 
 
-def _select_tool_capable_model(tier: str, selected: str) -> str:
+def _select_web_tool_capable_model(tier: str, selected: str) -> str:
     candidate = model_settings.model_triaging.get(TOOLS_TRIAGE_CATEGORY, {}).get(tier)
     if candidate:
         candidate = _resolve_triaged_model(candidate)
-        if _supports_tools(candidate):
+        if _supports_web_tools(candidate):
             return candidate
     logger.error(
         "Automatic model %r lacks tool support for web tools and MODEL_TRIAGING "

@@ -76,13 +76,24 @@ def given_model_exists(model_id, monkeypatch, ctx):
 
 
 @given(
-    parsers.re(r'model "(?P<model_id>[^"]+)" (?P<support>with|without) tool support')
+    parsers.re(
+        r'model "(?P<model_id>[^"]+)" (?P<support>with|without) web tool support'
+    )
 )
-def given_tool_support_model(model_id, support, monkeypatch, ctx):
-    capabilities = ["tools"] if support == "with" else []
+def given_web_tool_support_model(model_id, support, monkeypatch, ctx):
+    capabilities = ["tools", "content_agent"] if support == "with" else []
     ctx.setdefault("models", {})[model_id] = {
         "type": "llm",
         "capabilities": capabilities,
+    }
+    _install_settings(monkeypatch, ctx)
+
+
+@given(parsers.parse('model "{model_id}" with only capability "{capability}"'))
+def given_single_capability_model(model_id, capability, monkeypatch, ctx):
+    ctx.setdefault("models", {})[model_id] = {
+        "type": "llm",
+        "capabilities": [capability],
     }
     _install_settings(monkeypatch, ctx)
 
