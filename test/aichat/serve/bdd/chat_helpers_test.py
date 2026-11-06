@@ -35,7 +35,8 @@ from aichat.protocol.open_ai_protocol import (
 )
 from aichat.protocol.open_ai_protocol import Request as OpenAIRequest
 from aichat.responses import InlineSearch, PromptInjectionScanResult
-from aichat.serve import open_ai_api
+from aichat.serve import mcp_tool_execution, open_ai_api
+from aichat.serve.services import search
 from test.aichat.serve.bdd.helpers import (
     client_tool_call_chunk,
     content_chunk,
@@ -352,14 +353,16 @@ def when_augmented(access, ctx, monkeypatch):
     model_config = MagicMock()
     model_config.conversation_token_limit = ctx.get("token_limit_free")
     model_config.conversation_token_limit_premium = ctx.get("token_limit_premium")
-    ctx["augmented"] = asyncio.run(
-        open_ai_api.augment_messages(
-            messages=ctx["augment_messages"],
-            tools=[],
-            model_config=model_config,
-            is_premium=is_premium,
+
+    async def run():
+        messages = await open_ai_api.enforce_pdf_limits(
+            ctx["augment_messages"], model_config, is_premium
         )
-    )
+        return await open_ai_api.augment_messages(
+            messages=messages, tools=[], model_config=model_config
+        )
+
+    ctx["augmented"] = asyncio.run(run())
 
 
 @then(parsers.parse('the augmented messages contain "{marker}"'))
@@ -455,9 +458,7 @@ def given_inline_search(monkeypatch):
     helper.pop_completed_searches.side_effect = [[inline], []]
     helper.handle_received_completion = MagicMock()
     helper.get_inline_search_chunks = AsyncMock(return_value=[inline])
-    monkeypatch.setattr(
-        open_ai_api, "InlineSearchHelper", MagicMock(return_value=helper)
-    )
+    monkeypatch.setattr(search, "InlineSearchHelper", MagicMock(return_value=helper))
 
 
 @when(
@@ -630,7 +631,9 @@ def when_mcp_event_and_result(ctx, monkeypatch):
             ToolMessage(role="tool", tool_call_id="call_1", content=ctx["tool_result"]),
         )
 
-    monkeypatch.setattr(open_ai_api, "execute_tools_and_stream_events", tool_events)
+    monkeypatch.setattr(
+        mcp_tool_execution, "execute_tools_and_stream_events", tool_events
+    )
     ctx["events"] = run_stream_pipeline(
         ctx,
         monkeypatch,

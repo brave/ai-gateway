@@ -7,7 +7,7 @@ import pytest
 from fastapi import Request
 
 from aichat.serve import api_key_chat_api
-from aichat.serve.services import api_key_usage
+from aichat.serve.services import api_key_chat, api_key_usage
 
 
 def test_openai_error_response_shape():
@@ -75,7 +75,7 @@ def mock_request():
 
 def _passthrough_model_selection():
     return patch(
-        "aichat.serve.api_key_chat_api.select_model_for_request",
+        "aichat.serve.services.api_key_chat.select_model_for_request",
         new_callable=AsyncMock,
         side_effect=lambda model, **_: model,
     )
@@ -98,12 +98,13 @@ class TestHandleChatCompletions:
         mock_response.model_dump.return_value = {"id": "x"}
         with (
             patch(
-                "aichat.serve.api_key_chat_api.run_dynamic_leo", new_callable=AsyncMock
+                "aichat.serve.services.api_key_chat.run_dynamic_leo",
+                new_callable=AsyncMock,
             ),
             _passthrough_model_selection(),
-            patch("aichat.serve.api_key_chat_api.get_backend") as mock_get_backend,
+            patch("aichat.serve.services.api_key_chat.get_backend") as mock_get_backend,
             patch(
-                "aichat.serve.api_key_chat_api.apply_claude_upstream_sampling_params"
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
             ),
         ):
             backend = mock_get_backend.return_value
@@ -122,11 +123,12 @@ class TestHandleChatCompletions:
         }
         with (
             patch(
-                "aichat.serve.api_key_chat_api.run_dynamic_leo", new_callable=AsyncMock
+                "aichat.serve.services.api_key_chat.run_dynamic_leo",
+                new_callable=AsyncMock,
             ),
             _passthrough_model_selection(),
             patch(
-                "aichat.serve.api_key_chat_api.get_backend",
+                "aichat.serve.services.api_key_chat.get_backend",
                 side_effect=ValueError("no backend"),
             ),
         ):
@@ -143,12 +145,13 @@ class TestHandleChatCompletions:
         error_dict = {"type": "error", "code": 50000, "content": "boom"}
         with (
             patch(
-                "aichat.serve.api_key_chat_api.run_dynamic_leo", new_callable=AsyncMock
+                "aichat.serve.services.api_key_chat.run_dynamic_leo",
+                new_callable=AsyncMock,
             ),
             _passthrough_model_selection(),
-            patch("aichat.serve.api_key_chat_api.get_backend") as mock_get_backend,
+            patch("aichat.serve.services.api_key_chat.get_backend") as mock_get_backend,
             patch(
-                "aichat.serve.api_key_chat_api.apply_claude_upstream_sampling_params"
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
             ),
         ):
             backend = mock_get_backend.return_value
@@ -171,12 +174,13 @@ class TestHandleChatCompletions:
 
         with (
             patch(
-                "aichat.serve.api_key_chat_api.run_dynamic_leo", new_callable=AsyncMock
+                "aichat.serve.services.api_key_chat.run_dynamic_leo",
+                new_callable=AsyncMock,
             ),
             _passthrough_model_selection(),
-            patch("aichat.serve.api_key_chat_api.get_backend") as mock_get_backend,
+            patch("aichat.serve.services.api_key_chat.get_backend") as mock_get_backend,
             patch(
-                "aichat.serve.api_key_chat_api.apply_claude_upstream_sampling_params"
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
             ),
         ):
             backend = mock_get_backend.return_value
@@ -196,16 +200,17 @@ class TestHandleChatCompletions:
         mock_response.model_dump.return_value = {"id": "x", "model": "qwen-3-235b"}
         with (
             patch(
-                "aichat.serve.api_key_chat_api.run_dynamic_leo", new_callable=AsyncMock
+                "aichat.serve.services.api_key_chat.run_dynamic_leo",
+                new_callable=AsyncMock,
             ),
             patch(
-                "aichat.serve.api_key_chat_api.select_model_for_request",
+                "aichat.serve.services.api_key_chat.select_model_for_request",
                 new_callable=AsyncMock,
                 return_value="qwen-3-235b",
             ),
-            patch("aichat.serve.api_key_chat_api.get_backend") as mock_get_backend,
+            patch("aichat.serve.services.api_key_chat.get_backend") as mock_get_backend,
             patch(
-                "aichat.serve.api_key_chat_api.apply_claude_upstream_sampling_params"
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
             ),
         ):
             backend = mock_get_backend.return_value
@@ -227,7 +232,7 @@ class TestStreamChunks:
 
         out = [
             chunk_out
-            async for chunk_out in api_key_chat_api._stream_completion_chunks(
+            async for chunk_out in api_key_chat._stream_completion_chunks(
                 gen(), "test-model"
             )
         ]
@@ -245,7 +250,7 @@ class TestStreamChunks:
 
         out = [
             chunk_out
-            async for chunk_out in api_key_chat_api._stream_completion_chunks(
+            async for chunk_out in api_key_chat._stream_completion_chunks(
                 gen(), "test-model"
             )
         ]
@@ -268,7 +273,7 @@ class TestStreamChunks:
             yield
 
         with pytest.raises(RuntimeError):
-            async for _ in api_key_chat_api._stream_completion_chunks(
+            async for _ in api_key_chat._stream_completion_chunks(
                 gen(), "test-model", usage_ctx
             ):
                 pass

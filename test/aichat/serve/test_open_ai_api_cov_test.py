@@ -10,7 +10,7 @@ from openai.types.chat.chat_completion_chunk import (
 )
 
 from aichat.protocol.open_ai_protocol import Request as OpenAIRequest
-from aichat.serve import open_ai_api
+from aichat.serve import mcp_tool_execution, open_ai_api
 
 
 def _request(model="test-model", tools=None):
@@ -124,7 +124,7 @@ async def test_process_streaming_response_mcp_server_side_followup():
         yield None, ToolMessage(role="tool", tool_call_id="call_1", content="ok")
 
     with patch.object(
-        open_ai_api, "execute_tools_and_stream_events", side_effect=fake_execute
+        mcp_tool_execution, "execute_tools_and_stream_events", side_effect=fake_execute
     ):
         out = []
         async for item in open_ai_api.process_streaming_response(
@@ -162,7 +162,9 @@ async def test_process_streaming_response_near_model_passes_api_key():
     ext.near_api_key = "NEARKEY"
     with (
         patch.object(
-            open_ai_api, "execute_tools_and_stream_events", side_effect=fake_execute
+            mcp_tool_execution,
+            "execute_tools_and_stream_events",
+            side_effect=fake_execute,
         ),
         patch.object(open_ai_api, "external_service_settings", ext, create=True),
     ):
@@ -278,6 +280,11 @@ async def test_stream_with_compaction_happy_path_near_api_key():
             open_ai_api,
             "prepare_tools_for_request",
             new=AsyncMock(return_value=([], [], MagicMock())),
+        ),
+        patch.object(
+            open_ai_api,
+            "enforce_pdf_limits",
+            new=AsyncMock(side_effect=lambda messages, *_: messages),
         ),
         patch.object(open_ai_api, "augment_messages", new=AsyncMock(return_value=[])),
         patch.object(

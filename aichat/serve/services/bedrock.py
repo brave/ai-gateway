@@ -127,6 +127,45 @@ def map_tool_role_to_assistant(messages: list[dict]) -> list[dict]:
     ]
 
 
+def _is_blank_text_part(part) -> bool:
+    return (
+        isinstance(part, dict)
+        and part.get("type") == "text"
+        and not str(part.get("text") or "").strip()
+    )
+
+
+def drop_blank_user_text_parts(messages: list[dict]) -> list[dict]:
+    """
+    Remove empty or whitespace-only text parts from user messages, and drop
+    user messages left with no content.
+
+    With a Bedrock guardrail configured, litellm wraps trailing user text in
+    guardContent blocks, which Bedrock rejects when blank.
+    """
+    if not messages:
+        return messages
+
+    result = []
+    for message in messages:
+        if message.get("role") != "user":
+            result.append(message)
+            continue
+        content = message.get("content")
+        if isinstance(content, str):
+            if content.strip():
+                result.append(message)
+            continue
+        if isinstance(content, list):
+            kept = [part for part in content if not _is_blank_text_part(part)]
+            if not kept:
+                continue
+            if len(kept) != len(content):
+                message = {**message, "content": kept}
+        result.append(message)
+    return result
+
+
 def _assistant_content_is_nonempty(content) -> bool:
     """True when an assistant message carries meaningful text content."""
     if not content:

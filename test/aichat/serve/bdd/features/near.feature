@@ -42,8 +42,8 @@ Feature: NEAR TEE attestation
     When the target digests are extracted
     Then all four target digests are returned
 
-  Scenario: Target digest extraction fails on digest count mismatch
-    Given a gateway compose file with only two target images
+  Scenario: Target digest extraction fails when a required image is missing
+    Given a gateway compose file without cvm-ingress
     When the target digests are extracted
     Then no target digests are returned
 

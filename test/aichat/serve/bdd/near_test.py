@@ -245,10 +245,10 @@ def gateway_compose(ctx, compose_desc):
         ctx["expected_digests"] = {
             target: f"digest{i}" for i, target in enumerate(TARGET_IMAGES)
         }
-    elif compose_desc == "with only two target images":
+    elif compose_desc == "without cvm-ingress":
         images = [
             "quay.io/nearaidev/cloud-api@sha256:digest0",
-            "quay.io/nearaidev/cvm-ingress@sha256:digest1",
+            "quay.io/nearaidev/dstack-vpc@sha256:digest2",
             "quay.io/other/unrelated@sha256:zzz",
         ]
         ctx["app_compose"] = _compose_app_compose(images)
@@ -325,9 +325,9 @@ def _attestation_for(ctx, *, tampered=False, registered=True, compose_state="mis
             )
         ]
     elif compose_state == "mismatched":
-        # Only two of the four target images digested: _extract_target_digests
-        # count mismatch yields no digests, so _verify_attestation fails on
-        # the digest check BEFORE any S3 head object is performed.
+        # cvm-ingress is missing: _extract_target_digests yields no digests,
+        # so _verify_attestation fails on the digest check BEFORE any S3 head
+        # object is performed.
         actions = [
             ComposeAction(
                 action="compose_manager_started",
@@ -337,7 +337,6 @@ def _attestation_for(ctx, *, tampered=False, registered=True, compose_state="mis
         gateway_app_compose = _compose_app_compose(
             [
                 "quay.io/nearaidev/cloud-api@sha256:digest0",
-                "quay.io/nearaidev/cvm-ingress@sha256:digest1",
                 "quay.io/other/unrelated@sha256:zzz",
             ]
         )

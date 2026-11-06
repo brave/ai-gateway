@@ -57,6 +57,28 @@ Feature: Data URL fail-closed gate
     When the gate runs on a message with a "data:image/svg+xml;base64," part
     Then the part is removed
 
+  Scenario Outline: URL attachment parts with unprocessed data urls are removed
+    Given the media processor rejects the payload
+    When the gate runs on a "<part_type>" part with a "<data_url>" url
+    Then the part is removed
+
+    Examples:
+      | part_type | data_url                     |
+      | image_url | data:image/svg+xml;base64,   |
+      | file_url  | data:text/html;base64,       |
+      | file_url  | data:application/pdf;base64, |
+      | video_url | data:text/html;base64,       |
+
+  Scenario Outline: URL attachment parts confirmed by the processor are kept
+    Given the media processor confirms a safe binary payload
+    When the gate runs on a "<part_type>" part with a "data:video/mp4;base64," url
+    Then the part is kept
+
+    Examples:
+      | part_type |
+      | file_url  |
+      | video_url |
+
   Scenario: The api-key endpoint forwards list content intact
     When an api-key chat request with one text part is handled
     Then the backend received 1 content part
@@ -74,6 +96,12 @@ Feature: Data URL fail-closed gate
     When a title request carries a pdf part and a title part with text
     Then the title model saw only the synthetic transcript
 
-  Scenario: The passthrough endpoint removes unprocessed data urls
-    When a passthrough request with a "data:text/plain;base64," file part is handled
+  Scenario Outline: The passthrough endpoint removes unprocessed data urls
+    When a passthrough request with a "data:text/plain;base64," <part_type> part is handled
     Then the backend received 0 content part
+
+    Examples:
+      | part_type |
+      | file      |
+      | file_url  |
+      | video_url |

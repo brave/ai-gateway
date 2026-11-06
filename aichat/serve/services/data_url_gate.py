@@ -70,8 +70,11 @@ async def _keep_file_part(part: dict) -> bool:
     return False
 
 
-async def _keep_image_part(part: dict) -> bool:
-    url = part.get("image_url", {}).get("url", "")
+URL_PART_TYPES = frozenset({"image_url", "file_url", "video_url"})
+
+
+async def _keep_url_part(part: dict, part_type: str) -> bool:
+    url = (part.get(part_type) or {}).get("url", "")
     mime = _data_url_mime(url)
     if _should_keep_data_url(mime):
         return True
@@ -80,7 +83,9 @@ async def _keep_image_part(part: dict) -> bool:
     if await _inspect_data_url(url):
         return True
     DATA_URL_PART_REMOVED.inc()
-    logger.warning("removed image part with unprocessed data URL (mime=%s)", mime)
+    logger.warning(
+        "removed %s part with unprocessed data URL (mime=%s)", part_type, mime
+    )
     return False
 
 
@@ -88,8 +93,9 @@ async def remove_unprocessed_data_url_parts(messages: list[dict]) -> list[dict]:
     """Drop every data-URL content part that the media processor did not pass.
 
     Walks user messages with list content (same scope as the PDF limits
-    flow) and removes file/image parts whose data URLs are neither on the
-    known-safe-binary whitelist nor confirmed safe by the media processor.
+    flow) and removes file/image/file_url/video_url parts whose data URLs are
+    neither on the known-safe-binary whitelist nor confirmed safe by the media
+    processor.
     """
     result = []
     for message in messages:
@@ -101,8 +107,8 @@ async def remove_unprocessed_data_url_parts(messages: list[dict]) -> list[dict]:
                 if part_type == "file":
                     if await _keep_file_part(part):
                         kept_parts.append(part)
-                elif part_type == "image_url":
-                    if await _keep_image_part(part):
+                elif part_type in URL_PART_TYPES:
+                    if await _keep_url_part(part, part_type):
                         kept_parts.append(part)
                 else:
                     kept_parts.append(part)

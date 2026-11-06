@@ -99,9 +99,11 @@ SERVING_LOG_LOOKBACK = 20
 COMPOSE_MANAGER_STARTED_ACTION = "compose_manager_started"
 COMPOSE_UP_ACTION = "compose_up"
 COMPOSE_ACTIONS = (COMPOSE_UP_ACTION, "compose_down")
+# The gateway compose must run every required image. The other target
+# images are checked only when present.
+REQUIRED_TARGET_IMAGES = ("nearaidev/cloud-api", "nearaidev/cvm-ingress")
 TARGET_IMAGES = (
-    "nearaidev/cloud-api",
-    "nearaidev/cvm-ingress",
+    *REQUIRED_TARGET_IMAGES,
     "nearaidev/dstack-vpc",
     "nearaidev/dstack-vpc-client",
 )
@@ -349,13 +351,16 @@ def _extract_target_digests(app_compose: str | None) -> dict[str, str]:
         elif image.startswith("sha256:"):
             digest = image[len("sha256:") :]
 
-        if digest:
-            digests[matching_target] = digest
+        # A target image that is not pinned by digest, or two services of
+        # one target at different digests, cannot be checked: fail closed.
+        if not digest or digests.get(matching_target, digest) != digest:
+            logger.warning(f"Target image {matching_target} is not checkable: {image}")
+            return {}
+        digests[matching_target] = digest
 
-    if len(digests) != len(TARGET_IMAGES):
-        logger.warning(
-            f"Target digest count mismatch: expected {len(TARGET_IMAGES)}, got {len(digests)}"
-        )
+    missing = [t for t in REQUIRED_TARGET_IMAGES if t not in digests]
+    if missing:
+        logger.warning(f"Required target images missing: {missing}")
         return {}
 
     return digests

@@ -10,7 +10,12 @@ from pytest_bdd import given, parsers, scenarios, then, when
 
 from aichat.serve import api_key_chat_api, passthrough_api
 from aichat.serve.media_client import SandboxOpError, SandboxWorkerError
-from aichat.serve.services import conversation_title
+from aichat.serve.services import (
+    api_key_chat,
+    chat_request,
+    conversation_title,
+    passthrough,
+)
 from aichat.serve.services import data_url_gate as gate
 from aichat.serve.services import pdf as pdf_service
 
@@ -34,6 +39,12 @@ def pdf_payload(ctx):
 
 def _file_part(url: str, filename: str = "a.bin") -> dict:
     return {"type": "file", "file": {"filename": filename, "file_data": url}}
+
+
+def _attachment_part(part_type: str, url: str) -> dict:
+    if part_type == "file":
+        return _file_part(url)
+    return {"type": part_type, part_type: {"url": url}}
 
 
 class _FakeAnalyzer:
@@ -140,6 +151,18 @@ def gate_runs(ctx, data_url, monkeypatch):
     return ctx
 
 
+@when(parsers.parse('the gate runs on a "{part_type}" part with a "{data_url}" url'))
+def gate_runs_on_url_part(ctx, part_type, data_url, monkeypatch):
+    verdict = ctx.get("verdict", "rejects the payload")
+    _patch_inspect(monkeypatch, verdict)
+    part = _attachment_part(part_type, f"{data_url}{ctx['b64']}")
+    ctx["message"] = {"role": "user", "content": [part]}
+    ctx["result"] = asyncio.run(
+        gate.remove_unprocessed_data_url_parts([ctx["message"]])
+    )
+    return ctx
+
+
 @given("the media processor confirms a safe binary payload")
 def processor_confirms(ctx):
     ctx["verdict"] = "confirms a safe binary payload"
@@ -161,7 +184,7 @@ def processor_unavailable(ctx):
 @then("the part is kept")
 def part_kept(ctx):
     parts = ctx["result"][0]["content"]
-    assert len(parts) == 1 and parts[0].get("type") == "file", parts
+    assert parts == ctx["message"]["content"], parts
 
 
 @then("the part is removed")
@@ -198,19 +221,15 @@ def api_key_text_part(ctx, monkeypatch):
 
     _patch_inspect_pass_through(monkeypatch)
     backend, captured = _fake_backend_capture()
+    monkeypatch.setattr(api_key_chat, "get_backend", MagicMock(return_value=backend))
+    monkeypatch.setattr(api_key_chat, "run_dynamic_leo", AsyncMock(return_value=None))
     monkeypatch.setattr(
-        api_key_chat_api, "get_backend", MagicMock(return_value=backend)
-    )
-    monkeypatch.setattr(
-        api_key_chat_api, "run_dynamic_leo", AsyncMock(return_value=None)
-    )
-    monkeypatch.setattr(
-        api_key_chat_api,
+        api_key_chat,
         "select_model_for_request",
         AsyncMock(return_value="test-model"),
     )
     monkeypatch.setattr(
-        api_key_chat_api, "apply_claude_upstream_sampling_params", MagicMock()
+        chat_request, "apply_claude_upstream_sampling_params", MagicMock()
     )
 
     request = MagicMock(spec=Request)
@@ -245,19 +264,15 @@ def api_key_pdf_part(ctx, monkeypatch):
     patcher.start()
     _patch_inspect_pass_through(monkeypatch)
     backend, captured = _fake_backend_capture()
+    monkeypatch.setattr(api_key_chat, "get_backend", MagicMock(return_value=backend))
+    monkeypatch.setattr(api_key_chat, "run_dynamic_leo", AsyncMock(return_value=None))
     monkeypatch.setattr(
-        api_key_chat_api, "get_backend", MagicMock(return_value=backend)
-    )
-    monkeypatch.setattr(
-        api_key_chat_api, "run_dynamic_leo", AsyncMock(return_value=None)
-    )
-    monkeypatch.setattr(
-        api_key_chat_api,
+        api_key_chat,
         "select_model_for_request",
         AsyncMock(return_value="test-model"),
     )
     monkeypatch.setattr(
-        api_key_chat_api, "apply_claude_upstream_sampling_params", MagicMock()
+        chat_request, "apply_claude_upstream_sampling_params", MagicMock()
     )
 
     request = MagicMock(spec=Request)
@@ -289,19 +304,15 @@ def api_key_file_part(ctx, data_url, monkeypatch):
     patcher.start()
     _patch_inspect_pass_through(monkeypatch)
     backend, captured = _fake_backend_capture()
+    monkeypatch.setattr(api_key_chat, "get_backend", MagicMock(return_value=backend))
+    monkeypatch.setattr(api_key_chat, "run_dynamic_leo", AsyncMock(return_value=None))
     monkeypatch.setattr(
-        api_key_chat_api, "get_backend", MagicMock(return_value=backend)
-    )
-    monkeypatch.setattr(
-        api_key_chat_api, "run_dynamic_leo", AsyncMock(return_value=None)
-    )
-    monkeypatch.setattr(
-        api_key_chat_api,
+        api_key_chat,
         "select_model_for_request",
         AsyncMock(return_value="test-model"),
     )
     monkeypatch.setattr(
-        api_key_chat_api, "apply_claude_upstream_sampling_params", MagicMock()
+        chat_request, "apply_claude_upstream_sampling_params", MagicMock()
     )
 
     request = MagicMock(spec=Request)
@@ -319,14 +330,18 @@ def api_key_file_part(ctx, data_url, monkeypatch):
     return ctx
 
 
-@when(parsers.parse('a passthrough request with a "{data_url}" file part is handled'))
-def passthrough_file_part(ctx, data_url, monkeypatch):
+@when(
+    parsers.parse(
+        'a passthrough request with a "{data_url}" {part_type} part is handled'
+    )
+)
+def passthrough_file_part(ctx, data_url, part_type, monkeypatch):
     from fastapi.requests import Request
 
     url = f"{data_url}{ctx['b64']}"
     _patch_inspect_pass_through(monkeypatch)
     backend, captured = _fake_backend_capture()
-    monkeypatch.setattr(passthrough_api, "get_backend", MagicMock(return_value=backend))
+    monkeypatch.setattr(passthrough, "get_backend", MagicMock(return_value=backend))
     monkeypatch.setattr(
         passthrough_api, "require_internal_models_api_key", lambda _: None
     )
@@ -335,7 +350,9 @@ def passthrough_file_part(ctx, data_url, monkeypatch):
     request.json = AsyncMock(
         return_value={
             "model": "test-model",
-            "messages": [{"role": "user", "content": [_file_part(url)]}],
+            "messages": [
+                {"role": "user", "content": [_attachment_part(part_type, url)]}
+            ],
         }
     )
     request.headers = {}

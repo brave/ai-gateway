@@ -31,7 +31,6 @@ from aichat.llm.metrics import (
 from aichat.prompts.prompts import prompts
 from aichat.protocol.open_ai_protocol import (
     OPENAI_RESPONSE_OBJECTS,
-    AssistantMessage,
     Capability,
     CapabilityOptions,
     ErrorCode,
@@ -69,11 +68,12 @@ from aichat.serve.mcp_integration import initialize_mcp_for_request
 from aichat.serve.mcp_tool_execution import (
     STREAMING_TOOLS,
     advertised_tool_names,
-    execute_tools_and_stream_events,
+    build_tool_followup_messages,
     handle_streaming_tool_calls,
     may_run_streaming_tool,
+    run_mcp_tool_round,
     simplify_messages_for_llm,
-    simplify_tool_message_for_llm,
+    split_tool_calls,
 )
 from aichat.serve.message_preprocessing import (
     UnsupportedContentError,
@@ -123,9 +123,7 @@ from aichat.serve.services.models import (
 )
 from aichat.serve.services.near import verify_and_get_ohttp_config
 from aichat.serve.services.pdf import process_messages_for_pdf_limits
-from aichat.serve.services.search import (
-    InlineSearchHelper,
-)
+from aichat.serve.services.search import InlineSearchStream
 from aichat.serve.services.security_settings import security_settings
 from aichat.serve.services.trimming import maybe_trim_messages
 from aichat.serve.tool_parser import (
@@ -257,6 +255,8 @@ async def v1_chat_completions(
     except UnsupportedContentError as e:
         return create_error_response(ErrorCode.BAD_REQUEST_ERROR, str(e), api_version=2)
 
+    request.messages = await remove_unprocessed_attachments(request.messages)
+
     if not model_config.tool_support and request.tools:
         request.tools = None
 
@@ -339,11 +339,13 @@ async def v1_chat_completions(
         dynamic_leo=dynamic_leo_prefetch,
     )
 
+    request.messages = await enforce_pdf_limits(
+        request.messages, model_config, is_premium
+    )
     messages = await augment_messages(
         messages=request.messages,
         tools=tools,
         model_config=model_config,
-        is_premium=is_premium,
         brave_capability=request.brave_capability,
     )
 
@@ -447,11 +449,41 @@ async def v1_chat_completions(
         return response
 
 
+def _rebuild_messages(
+    messages: list[MessageUnion], processed: list[dict], original: list[dict]
+) -> list[MessageUnion]:
+    if processed == original:
+        return messages
+    return [message_adapter.validate_python(m) for m in processed]
+
+
+async def remove_unprocessed_attachments(
+    messages: list[MessageUnion],
+) -> list[MessageUnion]:
+    """Apply the data URL gate to the request's own message list."""
+    original = [m.model_dump(exclude_none=True) for m in messages]
+    processed = await remove_unprocessed_data_url_parts(original)
+    return _rebuild_messages(messages, processed, original)
+
+
+async def enforce_pdf_limits(
+    messages: list[MessageUnion], model_config: ModelConfig, is_premium: bool
+) -> list[MessageUnion]:
+    """Run the PDF sandbox flow on the request's own message list."""
+    token_limit = (
+        model_config.conversation_token_limit_premium
+        if is_premium
+        else model_config.conversation_token_limit
+    )
+    original = [m.model_dump(exclude_none=True) for m in messages]
+    processed = await process_messages_for_pdf_limits(original, token_limit)
+    return _rebuild_messages(messages, processed, original)
+
+
 async def augment_messages(
     messages: list[MessageUnion],
     tools: list[Tool],
     model_config: ModelConfig,
-    is_premium: bool = False,
     brave_capability: CapabilityOptions = None,
 ) -> list[dict]:
     """
@@ -461,7 +493,6 @@ async def augment_messages(
         messages: List of message objects
         tools: List of tools for the conversation
         model_config: Model configuration
-        is_premium: Whether the user has premium access
         brave_capability: Capabilities advertised by the client, used by
             prompts to gate directives on client support
 
@@ -471,14 +502,6 @@ async def augment_messages(
     messages_dict = []
     for message in messages:
         messages_dict.append(message.model_dump(exclude_none=True))
-
-    token_limit = (
-        model_config.conversation_token_limit_premium
-        if is_premium
-        else model_config.conversation_token_limit
-    )
-    messages_dict = await remove_unprocessed_data_url_parts(messages_dict)
-    messages_dict = await process_messages_for_pdf_limits(messages_dict, token_limit)
 
     for prompt in prompts.prompts:
         messages_dict = prompt.augment(
@@ -540,11 +563,13 @@ async def _stream_with_compaction(
             dynamic_leo=dynamic_leo,
         )
 
+        request.messages = await enforce_pdf_limits(
+            request.messages, model_config, is_premium
+        )
         messages = await augment_messages(
             messages=request.messages,
             tools=tools,
             model_config=model_config,
-            is_premium=is_premium,
             brave_capability=request.brave_capability,
         )
 
@@ -784,10 +809,7 @@ async def process_streaming_response(
     chunk_count = 0
     last_finish_reason = None
     chunk_emitter = ChunkEmitter(compaction_info)
-    inline_search_client = httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=1.0, read=2.0, write=1.0, pool=1.0)
-    )
-    inline_search_helper = InlineSearchHelper(inline_search_client)
+    inline_search = InlineSearchStream()
     allowed_tool_names = advertised_tool_names(original_client_tools)
 
     try:
@@ -798,8 +820,8 @@ async def process_streaming_response(
 
         async for chunk in response:
             chunk_count += 1
-            for inline_search in inline_search_helper.pop_completed_searches():
-                yield chunk_emitter.emit(create_openai_response(inline_search))
+            for inline_search_event in inline_search.pop_events():
+                yield chunk_emitter.emit(inline_search_event)
 
             pi_result_event = create_openai_response(pi_emitter.try_get_result())
             if pi_result_event:
@@ -878,9 +900,7 @@ async def process_streaming_response(
                             assistant_content_accumulator += chunk.choices[
                                 0
                             ].delta.content
-                            inline_search_helper.handle_received_completion(
-                                assistant_content_accumulator
-                            )
+                            inline_search.feed(assistant_content_accumulator)
 
                         if (
                             chunk.choices[0].delta.tool_calls
@@ -995,9 +1015,8 @@ async def process_streaming_response(
             report_duplicate_tool_call_ids(tool_calls_in_response, request.model)
 
         if tool_calls_in_response and mcp_executor and backend:
-            mcp_tool_calls = []
             streaming_tool_calls = []
-            client_tool_calls = []
+            other_tool_calls = []
             for tool_call in tool_calls_in_response:
                 if (
                     tool_call.function_name in STREAMING_TOOLS
@@ -1013,12 +1032,11 @@ async def process_streaming_response(
                         DEEP_RESEARCH_CAPABILITY_TOTAL.labels(
                             request.model, "True", str(len(request.messages))
                         ).inc()
-                elif tool_call.function_name in STREAMING_TOOLS:
-                    client_tool_calls.append(tool_call)
-                elif await mcp_executor.is_mcp_tool(tool_call.function_name):
-                    mcp_tool_calls.append(tool_call)
                 else:
-                    client_tool_calls.append(tool_call)
+                    other_tool_calls.append(tool_call)
+            mcp_tool_calls, client_tool_calls = await split_tool_calls(
+                other_tool_calls, mcp_executor
+            )
 
             # Handle streaming tools (like deep_research) first
             if streaming_tool_calls:
@@ -1049,60 +1067,22 @@ async def process_streaming_response(
                 )
 
                 tool_result_messages = []
-                async for (
-                    event_str,
-                    tool_output_or_message,
-                ) in execute_tools_and_stream_events(
+                async for event_str in run_mcp_tool_round(
                     mcp_tool_calls,
                     mcp_executor,
                     conversation_log_id or "unknown",
                     actual_model,
                     request.model,
+                    tool_result_messages,
                 ):
-                    if event_str:
-                        yield event_str
-                    if tool_output_or_message:
-                        if isinstance(tool_output_or_message, dict):
-                            chunk_json = json.dumps(
-                                tool_output_or_message, separators=(",", ":")
-                            )
-                            yield f"data: {chunk_json}\n\n"
-                        else:
-                            tool_result_messages.append(tool_output_or_message)
+                    yield event_str
 
                 if tool_result_messages and not client_tool_calls:
-                    new_messages = [
-                        (
-                            message.model_dump(exclude_none=True)
-                            if hasattr(message, "model_dump")
-                            else message
-                        )
-                        for message in request.messages
-                    ]
-
-                    filtered_tool_calls = [
-                        tc
-                        for tc in assistant_tool_calls_for_message
-                        if any(
-                            tc.function.name == mcp_tc.function_name
-                            for mcp_tc in mcp_tool_calls
-                        )
-                    ]
-
-                    assistant_message = AssistantMessage(
-                        role="assistant",
-                        content=None,
-                        tool_calls=filtered_tool_calls,
-                    )
-                    new_messages.append(assistant_message.model_dump(exclude_none=True))
-
-                    new_messages.extend(
-                        (
-                            simplify_tool_message_for_llm(msg)
-                            if hasattr(msg, "model_dump")
-                            else msg
-                        )
-                        for msg in tool_result_messages
+                    new_messages = build_tool_followup_messages(
+                        request.messages,
+                        assistant_tool_calls_for_message,
+                        mcp_tool_calls,
+                        tool_result_messages,
                     )
 
                     logger.debug(
@@ -1167,8 +1147,8 @@ async def process_streaming_response(
             yield chunk_emitter.emit(pi_result_event)
 
         # Return all remaining inline search chunks.
-        for inline_search in await inline_search_helper.get_inline_search_chunks():
-            yield chunk_emitter.emit(create_openai_response(inline_search))
+        for inline_search_event in await inline_search.drain_events():
+            yield chunk_emitter.emit(inline_search_event)
 
         if not deep_research_triggered and has_capability(
             request.brave_capability, Capability.deep_research
@@ -1247,7 +1227,7 @@ async def process_streaming_response(
             yield chunk_emitter.emit(f"data: {chunk_json}\n\n")
         yield "data: [DONE]\n\n"
     finally:
-        await inline_search_client.aclose()
+        await inline_search.aclose()
         if hasattr(response, "aclose"):
             await response.aclose()
 

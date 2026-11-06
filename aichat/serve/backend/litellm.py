@@ -24,6 +24,7 @@ from aichat.serve.external_service_settings import external_service_settings
 from aichat.serve.server_settings import server_settings
 from aichat.serve.services.bedrock import (
     add_cache_control_to_tools,
+    drop_blank_user_text_parts,
     filter_tool_call_result_pairing,
     format_tools_for_bedrock,
     get_bedrock_guardrail_params,
@@ -560,6 +561,7 @@ class LitellmBackend(Backend):
             messages = filter_tool_call_result_pairing(
                 messages, model_id=self.config.model_id
             )
+            messages = drop_blank_user_text_parts(messages)
             if getattr(self.config, "tool_role_as_assistant", False):
                 messages = map_tool_role_to_assistant(messages)
             else:

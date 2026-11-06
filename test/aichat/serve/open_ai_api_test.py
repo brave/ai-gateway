@@ -561,6 +561,219 @@ class TestV1ChatCompletions:
         assert messages[0]["role"] == "user"
         assert messages[0]["content"] == "Hello, how are you?"
 
+    @staticmethod
+    def _attachment_request(stream: bool) -> OpenAIRequest:
+        return OpenAIRequest.model_validate(
+            {
+                "model": "test-model",
+                "stream": stream,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "summarize"},
+                            {
+                                "type": "file",
+                                "file": {
+                                    "filename": "x.svg",
+                                    "file_data": "data:image/svg+xml;base64,PHN2Zz4=",
+                                },
+                            },
+                            {
+                                "type": "file_url",
+                                "file_url": {"url": "data:text/html;base64,PGh0bWw+"},
+                            },
+                            {
+                                "type": "video_url",
+                                "video_url": {"url": "data:text/html;base64,PGh0bWw+"},
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": "data:image/png;base64,iVBORw0K"},
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+
+    @patch(
+        "aichat.serve.services.data_url_gate.call_media_inspect",
+        new_callable=AsyncMock,
+        return_value={"is_binary_safe": False},
+    )
+    @patch("aichat.serve.open_ai_api.mcp_settings")
+    @patch("aichat.serve.open_ai_api.check_requests_common")
+    @patch("aichat.serve.open_ai_api.get_backend")
+    @patch("aichat.serve.open_ai_api.get_model_config")
+    @patch("aichat.serve.open_ai_api.prompts")
+    @pytest.mark.asyncio
+    async def test_v1_chat_completions_gates_request_messages(
+        self,
+        mock_prompts,
+        mock_get_model_config,
+        mock_get_backend,
+        mock_check_requests,
+        mock_mcp_settings,
+        _mock_inspect,
+        mock_request,
+        mock_background_tasks,
+        mock_fastapi_response,
+        mock_common_params,
+        mock_backend,
+        mock_model_config,
+    ):
+        mock_check_requests.return_value = None
+        mock_get_backend.return_value = mock_backend
+        mock_get_model_config.return_value = mock_model_config
+        mock_prompts.prompts = []
+        mock_mcp_settings.mcp_enabled = False
+        request = self._attachment_request(stream=False)
+
+        with patch(
+            "aichat.serve.open_ai_api.select_model_for_request",
+            return_value="test-model",
+        ):
+            await v1_chat_completions(
+                raw_request=mock_request,
+                request=request,
+                background_tasks=mock_background_tasks,
+                fastapi_response=mock_fastapi_response,
+                common=mock_common_params,
+            )
+
+        assert [p.type for p in request.messages[0].content] == ["text", "image_url"]
+        sent = mock_backend.converse.call_args[0][0]
+        assert [p["type"] for p in sent[0]["content"]] == ["text", "image_url"]
+
+    @patch("aichat.serve.open_ai_api.mcp_settings")
+    @patch("aichat.serve.open_ai_api.check_requests_common")
+    @patch("aichat.serve.open_ai_api.get_backend")
+    @patch("aichat.serve.open_ai_api.get_model_config")
+    @patch("aichat.serve.open_ai_api.prompts")
+    @pytest.mark.asyncio
+    async def test_v1_chat_completions_keeps_pdf_limits_on_request_messages(
+        self,
+        mock_prompts,
+        mock_get_model_config,
+        mock_get_backend,
+        mock_check_requests,
+        mock_mcp_settings,
+        mock_request,
+        mock_background_tasks,
+        mock_fastapi_response,
+        mock_common_params,
+        mock_backend,
+        mock_model_config,
+    ):
+        mock_check_requests.return_value = None
+        mock_get_backend.return_value = mock_backend
+        mock_get_model_config.return_value = mock_model_config
+        mock_prompts.prompts = []
+        mock_mcp_settings.mcp_enabled = False
+        request = OpenAIRequest.model_validate(
+            {
+                "model": "test-model",
+                "stream": False,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "file",
+                                "file": {
+                                    "filename": "a.pdf",
+                                    "file_data": "data:application/pdf;base64,JVBERg==",
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+        async def fake_pdf_limits(messages, token_limit):
+            return [
+                {**m, "content": [{"type": "brave-pdf-text", "text": "pdf text"}]}
+                for m in messages
+            ]
+
+        with (
+            patch(
+                "aichat.serve.open_ai_api.select_model_for_request",
+                return_value="test-model",
+            ),
+            patch(
+                "aichat.serve.open_ai_api.process_messages_for_pdf_limits",
+                side_effect=fake_pdf_limits,
+            ),
+        ):
+            await v1_chat_completions(
+                raw_request=mock_request,
+                request=request,
+                background_tasks=mock_background_tasks,
+                fastapi_response=mock_fastapi_response,
+                common=mock_common_params,
+            )
+
+        assert [p.type for p in request.messages[0].content] == ["brave-pdf-text"]
+
+    @patch(
+        "aichat.serve.services.data_url_gate.call_media_inspect",
+        new_callable=AsyncMock,
+        return_value={"is_binary_safe": False},
+    )
+    @patch("aichat.serve.open_ai_api.should_compact", return_value=True)
+    @patch("aichat.serve.open_ai_api.check_requests_common")
+    @patch("aichat.serve.open_ai_api.get_backend")
+    @patch("aichat.serve.open_ai_api.get_model_config")
+    @pytest.mark.asyncio
+    async def test_v1_chat_completions_gates_before_compaction(
+        self,
+        mock_get_model_config,
+        mock_get_backend,
+        mock_check_requests,
+        _mock_should_compact,
+        _mock_inspect,
+        mock_request,
+        mock_background_tasks,
+        mock_fastapi_response,
+        mock_common_params,
+        mock_backend,
+        mock_model_config,
+    ):
+        mock_check_requests.return_value = None
+        mock_get_backend.return_value = mock_backend
+        mock_get_model_config.return_value = mock_model_config
+        request = self._attachment_request(stream=True)
+
+        async def empty_stream(**kwargs):
+            yield "data: [DONE]\n\n"
+
+        with (
+            patch(
+                "aichat.serve.open_ai_api.select_model_for_request",
+                return_value="test-model",
+            ),
+            patch(
+                "aichat.serve.open_ai_api._stream_with_compaction",
+                side_effect=empty_stream,
+            ) as mock_compaction,
+        ):
+            await v1_chat_completions(
+                raw_request=mock_request,
+                request=request,
+                background_tasks=mock_background_tasks,
+                fastapi_response=mock_fastapi_response,
+                common=mock_common_params,
+            )
+
+        compaction_messages = mock_compaction.call_args.kwargs["messages"]
+        assert [p["type"] for p in compaction_messages[0]["content"]] == [
+            "text",
+            "image_url",
+        ]
+
 
 class TestProcessStreamingResponse:
     @pytest.fixture
@@ -1828,7 +2041,7 @@ class TestInlineSearchIntegration:
 
     @pytest.mark.asyncio
     @patch("aichat.serve.open_ai_api.security_settings")
-    @patch("aichat.serve.open_ai_api.InlineSearchHelper")
+    @patch("aichat.serve.services.search.InlineSearchHelper")
     async def test_inline_search_detection_in_streaming_response(
         self,
         mock_helper_class,
@@ -1864,7 +2077,7 @@ class TestInlineSearchIntegration:
 
     @pytest.mark.asyncio
     @patch("aichat.serve.open_ai_api.security_settings")
-    @patch("aichat.serve.open_ai_api.InlineSearchHelper")
+    @patch("aichat.serve.services.search.InlineSearchHelper")
     async def test_inline_search_multiple_results_emitted(
         self,
         mock_helper_class,
@@ -1930,7 +2143,7 @@ class TestInlineSearchIntegration:
 
     @pytest.mark.asyncio
     @patch("aichat.serve.open_ai_api.security_settings")
-    @patch("aichat.serve.open_ai_api.InlineSearchHelper")
+    @patch("aichat.serve.services.search.InlineSearchHelper")
     async def test_inline_search_handle_completion_called_per_chunk(
         self,
         mock_helper_class,
@@ -1973,7 +2186,7 @@ class TestInlineSearchIntegration:
 
     @pytest.mark.asyncio
     @patch("aichat.serve.open_ai_api.security_settings")
-    @patch("aichat.serve.open_ai_api.InlineSearchHelper")
+    @patch("aichat.serve.services.search.InlineSearchHelper")
     async def test_inline_search_no_results_when_no_patterns(
         self,
         mock_helper_class,
@@ -2135,7 +2348,7 @@ class TestInlineSearchIntegration:
 
     @pytest.mark.asyncio
     @patch("aichat.serve.open_ai_api.security_settings")
-    @patch("aichat.serve.open_ai_api.InlineSearchHelper")
+    @patch("aichat.serve.services.search.InlineSearchHelper")
     async def test_inline_search_content_passed_to_helper(
         self,
         mock_helper_class,
