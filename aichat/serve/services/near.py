@@ -99,8 +99,8 @@ SERVING_LOG_LOOKBACK = 20
 COMPOSE_MANAGER_STARTED_ACTION = "compose_manager_started"
 COMPOSE_UP_ACTION = "compose_up"
 COMPOSE_ACTIONS = (COMPOSE_UP_ACTION, "compose_down")
-# Every gateway compose must run the required images. The VPC images are
-# checked only when present: NEAR took Cloud API out of the VPC mesh.
+# The gateway compose must run every required image. The other target
+# images are checked only when present.
 REQUIRED_TARGET_IMAGES = ("nearaidev/cloud-api", "nearaidev/cvm-ingress")
 TARGET_IMAGES = (
     *REQUIRED_TARGET_IMAGES,

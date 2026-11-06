@@ -118,7 +118,6 @@ def test_extract_target_digests_requires_cloud_api_and_cvm_ingress():
 
 
 def test_extract_target_digests_accepts_gateway_without_vpc():
-    # NEAR took Cloud API out of the VPC mesh.
     no_vpc = {
         "nearaidev/cloud-api": "a" * 64,
         "nearaidev/cvm-ingress": "b" * 64,
