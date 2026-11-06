@@ -107,13 +107,54 @@ def test_extract_target_digests_returns_all_targets():
     assert result == {key: value for key, value in digests.items()}
 
 
-def test_extract_target_digests_requires_all_targets():
+def test_extract_target_digests_requires_cloud_api_and_cvm_ingress():
     partial = {
+        "nearaidev/cloud-api": "a" * 64,
+        "nearaidev/dstack-vpc": "c" * 64,
+        "nearaidev/dstack-vpc-client": "d" * 64,
+    }
+
+    assert near._extract_target_digests(_build_app_compose(partial)) == {}
+
+
+def test_extract_target_digests_accepts_gateway_without_vpc():
+    no_vpc = {
         "nearaidev/cloud-api": "a" * 64,
         "nearaidev/cvm-ingress": "b" * 64,
     }
 
-    assert near._extract_target_digests(_build_app_compose(partial)) == {}
+    assert near._extract_target_digests(_build_app_compose(no_vpc)) == no_vpc
+
+
+def _images_app_compose(images: list[str]) -> str:
+    services = "".join(
+        f"  svc{i}:\n    image: {image}\n" for i, image in enumerate(images)
+    )
+    return json.dumps({"docker_compose_file": f"services:\n{services}"})
+
+
+def test_extract_target_digests_rejects_undigested_target():
+    compose = _images_app_compose(
+        [
+            f"nearaidev/cloud-api@sha256:{'a' * 64}",
+            f"nearaidev/cvm-ingress@sha256:{'b' * 64}",
+            "nearaidev/dstack-vpc:latest",
+        ]
+    )
+
+    assert near._extract_target_digests(compose) == {}
+
+
+def test_extract_target_digests_rejects_conflicting_digests():
+    compose = _images_app_compose(
+        [
+            f"nearaidev/cloud-api@sha256:{'a' * 64}",
+            f"nearaidev/cloud-api@sha256:{'e' * 64}",
+            f"nearaidev/cvm-ingress@sha256:{'b' * 64}",
+        ]
+    )
+
+    assert near._extract_target_digests(compose) == {}
 
 
 def test_extract_target_digests_handles_missing_app_compose():
