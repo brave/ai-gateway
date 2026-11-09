@@ -28,4 +28,4 @@ jobs:
         run: echo "GITHUB_REF_OVERRIDE=refs/heads/dev" >> "$GITHUB_ENV"
         if: ${{ github.ref == 'refs/heads/main' }}
       - name: ai-gateway deployments
-        uses: brave-intl/general-docker-build-pipeline-action@6f5e92e5910e304e27290c809361d4a588829431 # v1.0.42
+        uses: brave-intl/general-docker-build-pipeline-action@3561407ff0efff530682cba981772eb7435fe5c3 # v1.0.44
