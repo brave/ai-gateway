@@ -75,6 +75,13 @@ def check_api_key_host(request: Request) -> JSONResponse | None:
     return None
 
 
+_DENY_RESPONSES = {
+    "insufficient_credit": (402, "Insufficient credit.", "insufficient_credit"),
+    "limit_reached": (429, "API key limit reached.", "key_limit_reached"),
+    "unavailable": (503, "Service unavailable.", "service_unavailable"),
+}
+
+
 async def authorize_api_key(request: Request, api_key: str) -> JSONResponse | None:
     if not internal_settings.internal_api_enabled:
         return None
@@ -82,7 +89,10 @@ async def authorize_api_key(request: Request, api_key: str) -> JSONResponse | No
     if verdict is None:
         return openai_error_response(503, "Service unavailable.", "service_unavailable")
     if not verdict.get("allowed", False):
-        return openai_error_response(401, "Invalid API key.", "invalid_api_key")
+        status, message, error_type = _DENY_RESPONSES.get(
+            verdict.get("reason"), (401, "Invalid API key.", "invalid_api_key")
+        )
+        return openai_error_response(status, message, error_type)
     return None
 
 
