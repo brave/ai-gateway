@@ -170,13 +170,16 @@ def _hide_search_tool_calls(chunk: Any, state: _Round, search_names: set[str]) -
         choice.finish_reason = None
         state.hidden_finish = True
         stripped = True
-    return not (
+    emptied = (
         stripped
         and not getattr(delta, "content", None)
         and not getattr(delta, "tool_calls", None)
         and not choice.finish_reason
-        and not getattr(chunk, "usage", None)
     )
+    if emptied and getattr(chunk, "usage", None):
+        chunk.choices = []
+        return True
+    return not emptied
 
 
 async def _stream_round(

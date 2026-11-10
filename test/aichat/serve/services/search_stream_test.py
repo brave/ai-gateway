@@ -175,8 +175,8 @@ def test_hidden_search_chunk_with_usage_is_kept():
     state.accumulator.process_chunk(chunk.choices[0].delta.tool_calls)
 
     assert _hide_search_tool_calls(chunk, state, SEARCH_NAMES)
-    assert chunk.choices[0].delta.tool_calls is None
-    assert chunk.choices[0].finish_reason is None
+    assert chunk.choices == []
+    assert chunk.usage.total_tokens == 3
 
 
 @pytest.mark.asyncio
