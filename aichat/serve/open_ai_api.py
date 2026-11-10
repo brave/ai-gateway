@@ -198,6 +198,7 @@ async def v1_chat_completions(
             rate_key=rate_key,
             httpx_client=getattr(raw_request.state, "httpx_client", None),
             androcles_prefetch=dynamic_leo_prefetch,
+            tools=request.tools,
         )
         common["model"] = request.model
 
