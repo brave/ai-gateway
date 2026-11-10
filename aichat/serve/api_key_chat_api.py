@@ -75,15 +75,42 @@ def check_api_key_host(request: Request) -> JSONResponse | None:
     return None
 
 
-async def authorize_api_key(request: Request, api_key: str) -> JSONResponse | None:
-    if not internal_settings.internal_api_enabled:
+_DENY_RESPONSES = {
+    "insufficient_credit": (402, "Insufficient credit.", "insufficient_credit"),
+    "limit_reached": (429, "API key limit reached.", "key_limit_reached"),
+    "unavailable": (503, "Service unavailable.", "service_unavailable"),
+    "model_not_allowed": (400, "The model does not exist.", "model_not_found"),
+}
+
+
+async def requested_model(request: Request) -> str | None:
+    try:
+        body = await request.json()
+    except Exception:
         return None
-    verdict = await internal_client.api_key_verify(request.state.httpx_client, api_key)
+    model = body.get("model") if isinstance(body, dict) else None
+    return model if isinstance(model, str) else None
+
+
+async def authorize_api_key(
+    request: Request, api_key: str, model: str | None = None
+) -> tuple[JSONResponse | None, str | None]:
+    if not internal_settings.internal_api_enabled:
+        return None, None
+    verdict = await internal_client.api_key_verify(
+        request.state.httpx_client, api_key, model
+    )
     if verdict is None:
-        return openai_error_response(503, "Service unavailable.", "service_unavailable")
+        return (
+            openai_error_response(503, "Service unavailable.", "service_unavailable"),
+            None,
+        )
     if not verdict.get("allowed", False):
-        return openai_error_response(401, "Invalid API key.", "invalid_api_key")
-    return None
+        status, message, error_type = _DENY_RESPONSES.get(
+            verdict.get("reason"), (401, "Invalid API key.", "invalid_api_key")
+        )
+        return openai_error_response(status, message, error_type), None
+    return None, verdict.get("model")
 
 
 class ApiKeyRoute(APIRoute):
@@ -101,7 +128,9 @@ async def chat_completions(request: Request):
     api_key = api_key_from_authorization(request.headers.get("authorization"))
     if api_key is None:
         return openai_error_response(401, "Invalid API key.", "invalid_api_key")
-    error = await authorize_api_key(request, api_key)
+    error, model = await authorize_api_key(
+        request, api_key, await requested_model(request)
+    )
     if error is not None:
         return error
-    return await handle_chat_completions(request, api_key)
+    return await handle_chat_completions(request, api_key, model)

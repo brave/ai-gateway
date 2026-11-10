@@ -69,12 +69,12 @@ async def sku_verify(
 
 
 async def api_key_verify(
-    client: httpx.AsyncClient, api_key: str
+    client: httpx.AsyncClient, api_key: str, model: str | None = None
 ) -> dict[str, Any] | None:
     return await _post(
         client,
         "/1/api_key/verify",
-        {"api_key": api_key},
+        {"api_key": api_key, **({"model": model} if model else {})},
         idempotent=True,
     )
 
