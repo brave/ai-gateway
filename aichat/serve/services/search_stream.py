@@ -261,63 +261,67 @@ async def stream_with_search(
     search_names = {_tool_name(tool) for tool in search_tools} - {None}
     inline = InlineSearchStream() if inline_search else None
     try:
-        for round_number in range(_MAX_TOOL_ROUNDS + 1):
-            state = _Round()
-            async for event in _stream_round(
-                response, state, search_names, inline, on_chunk
-            ):
-                yield event
-
-            search_calls = [
-                tool_call
-                for tool_call in state.tool_calls
-                if tool_call.function_name in search_names
-            ]
-            if not search_calls and state.hidden_finish:
-                yield _error_event(
-                    "Search tool call arguments could not be parsed.",
-                    "invalid_tool_call",
-                )
-                break
-            if not search_calls or len(search_calls) != len(state.tool_calls):
-                break
-            if round_number == _MAX_TOOL_ROUNDS:
-                logger.warning("Search tool round limit reached for %s", model)
-                yield _round_limit_event(state.response_id, model, on_chunk)
-                break
-
-            tool_result_messages: list = []
-            async for event in _run_search_calls(
-                search_calls,
-                mcp_executor,
-                state.response_id or "unknown",
-                model,
-                tool_result_messages,
-            ):
-                yield event
-            if not tool_result_messages:
-                break
-
-            messages = build_tool_followup_messages(
-                messages,
-                _assistant_tool_calls(search_calls),
-                search_calls,
-                tool_result_messages,
-            )
-            response = await next_round(messages)
-            if isinstance(response, dict):
-                yield _error_event(
-                    response.get("content") or "Search follow-up failed.",
-                    "internal_error",
-                )
-                break
-            if response is None:
-                break
-
-        if inline is not None:
-            for event in await inline.drain_events():
-                if event:
+        try:
+            for round_number in range(_MAX_TOOL_ROUNDS + 1):
+                state = _Round()
+                async for event in _stream_round(
+                    response, state, search_names, inline, on_chunk
+                ):
                     yield event
+
+                search_calls = [
+                    tool_call
+                    for tool_call in state.tool_calls
+                    if tool_call.function_name in search_names
+                ]
+                if not search_calls and state.hidden_finish:
+                    yield _error_event(
+                        "Search tool call arguments could not be parsed.",
+                        "invalid_tool_call",
+                    )
+                    break
+                if not search_calls or len(search_calls) != len(state.tool_calls):
+                    break
+                if round_number == _MAX_TOOL_ROUNDS:
+                    logger.warning("Search tool round limit reached for %s", model)
+                    yield _round_limit_event(state.response_id, model, on_chunk)
+                    break
+
+                tool_result_messages: list = []
+                async for event in _run_search_calls(
+                    search_calls,
+                    mcp_executor,
+                    state.response_id or "unknown",
+                    model,
+                    tool_result_messages,
+                ):
+                    yield event
+                if not tool_result_messages:
+                    break
+
+                messages = build_tool_followup_messages(
+                    messages,
+                    _assistant_tool_calls(search_calls),
+                    search_calls,
+                    tool_result_messages,
+                )
+                response = await next_round(messages)
+                if isinstance(response, dict):
+                    yield _error_event(
+                        response.get("content") or "Search follow-up failed.",
+                        "internal_error",
+                    )
+                    break
+                if response is None:
+                    break
+
+            if inline is not None:
+                for event in await inline.drain_events():
+                    if event:
+                        yield event
+        except Exception:
+            logger.exception("Search stream failed for %s", model)
+            yield _error_event("Search stream failed.", "internal_error")
         yield "data: [DONE]\n\n"
     finally:
         if inline is not None:

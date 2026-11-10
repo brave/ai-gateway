@@ -227,6 +227,23 @@ async def test_followup_error_ends_with_an_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_followup_exception_ends_with_an_error(monkeypatch):
+    _patch_search_tools(monkeypatch)
+
+    async def next_round(_messages):
+        raise RuntimeError("backend down")
+
+    events = await _collect(_Stream(_search_chunk()), next_round)
+
+    assert events[-1] == "data: [DONE]\n\n"
+    assert _payloads(events)[-1]["error"] == {
+        "message": "Search stream failed.",
+        "type": "internal_error",
+        "code": "internal_error",
+    }
+
+
+@pytest.mark.asyncio
 async def test_search_output_is_sent_outside_tool_call_deltas(monkeypatch):
     output_content = [{"type": "brave-chat.webSources", "sources": []}]
     _patch_search_tools(
