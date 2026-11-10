@@ -23,16 +23,34 @@ class ChatRequest:
     tools: list
     extra_params: dict[str, Any]
     enable_prompt_caching: bool | None
+    inline_search: bool = False
+    search_tools: bool = False
+
+    @property
+    def search_enabled(self) -> bool:
+        return self.inline_search or self.search_tools
+
+
+def _optional_bool(body: Any, key: str) -> bool | None:
+    value = body.get(key)
+    if value is not None and not isinstance(value, bool):
+        raise ValueError(f"{key} must be a boolean")
+    return value
 
 
 def parse_chat_request(body: Any) -> ChatRequest:
     chat_request = _request_adapter.validate_python(body)
 
-    enable_prompt_caching = body.get("prompt_caching")
-    if enable_prompt_caching is not None and not isinstance(
-        enable_prompt_caching, bool
-    ):
-        raise ValueError("prompt_caching must be a boolean")
+    enable_prompt_caching = _optional_bool(body, "prompt_caching")
+    inline_search = bool(_optional_bool(body, "brave_inline_search"))
+    search_tools = bool(_optional_bool(body, "brave_search_tools"))
+    stream = bool(chat_request.get("stream"))
+    if (inline_search or search_tools) and not stream:
+        raise ValueError(
+            "brave_inline_search and brave_search_tools require stream to be true"
+        )
+    if (inline_search or search_tools) and chat_request.get("n") not in (None, 1):
+        raise ValueError("brave_inline_search and brave_search_tools require n to be 1")
 
     extra_params = {
         key: value
@@ -43,10 +61,12 @@ def parse_chat_request(body: Any) -> ChatRequest:
     return ChatRequest(
         model=str(chat_request["model"]),
         raw_messages=body["messages"],
-        stream=bool(chat_request.get("stream")),
+        stream=stream,
         tools=tools,
         extra_params=extra_params,
         enable_prompt_caching=enable_prompt_caching,
+        inline_search=inline_search,
+        search_tools=search_tools,
     )
 
 
