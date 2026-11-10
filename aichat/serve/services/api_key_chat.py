@@ -54,7 +54,9 @@ async def _stream_completion_chunks(
     yield "data: [DONE]\n\n"
 
 
-async def handle_chat_completions(request: Request, api_key: str | None = None):
+async def handle_chat_completions(
+    request: Request, api_key: str | None = None, served_model: str | None = None
+):
     logger.debug("api_key_chat /chat/completions")
     try:
         chat_request = parse_chat_request(await request.json())
@@ -66,7 +68,7 @@ async def handle_chat_completions(request: Request, api_key: str | None = None):
         messages = await prepare_messages(protocol_messages)
         dynamic_leo_prefetch = await run_dynamic_leo(protocol_messages)
         model = await select_model_for_request(
-            model=chat_request.model,
+            model=served_model or chat_request.model,
             messages=protocol_messages,
             is_premium=False,
             last_user_message_content=get_last_user_message_content(protocol_messages),
@@ -90,7 +92,10 @@ async def handle_chat_completions(request: Request, api_key: str | None = None):
         usage_ctx = None
         if api_key is not None and internal_settings.internal_api_enabled:
             usage_ctx = api_key_usage.new_usage_context(
-                request.state.httpx_client, api_key, model, backend.config
+                request.state.httpx_client,
+                api_key,
+                served_model or model,
+                backend.config,
             )
 
         converse = backend.converse(messages, stream=chat_request.stream, params=params)
@@ -115,8 +120,10 @@ async def handle_chat_completions(request: Request, api_key: str | None = None):
 
     if chat_request.stream:
         return StreamingResponse(
-            _stream_completion_chunks(response, model, usage_ctx, include_usage),
+            _stream_completion_chunks(
+                response, chat_request.model, usage_ctx, include_usage
+            ),
             media_type="text/event-stream",
         )
-    response.model = model
+    response.model = chat_request.model
     return JSONResponse(content=response.model_dump())
