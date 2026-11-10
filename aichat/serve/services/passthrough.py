@@ -50,7 +50,7 @@ def _search_stream(
         followup = await backend.converse(followup_messages, stream=True, params=params)
         if isinstance(followup, dict):
             logger.warning("Search follow-up failed: %s", followup.get("content"))
-            return None
+            return followup
         return followup
 
     return stream_with_search(

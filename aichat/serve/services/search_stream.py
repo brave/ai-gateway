@@ -11,7 +11,7 @@ from aichat.protocol.open_ai_protocol import ToolCall, ToolCallFunction
 from aichat.serve.mcp_integration import initialize_mcp_for_request
 from aichat.serve.mcp_tool_execution import (
     build_tool_followup_messages,
-    run_mcp_tool_round,
+    execute_tools_and_stream_events,
 )
 from aichat.serve.services.mcp.mcp_settings import mcp_settings
 from aichat.serve.services.models import ModelConfig
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 _MAX_TOOL_ROUNDS = 5
 SEARCH_TOOL_NAMES = frozenset({"brave_web_search"})
 
-NextRound = Callable[[list[dict]], Awaitable[AsyncIterator | None]]
+NextRound = Callable[[list[dict]], Awaitable[AsyncIterator | dict | None]]
 OnChunk = Callable[[Any], Any | None]
 
 
@@ -62,6 +62,51 @@ def _round_limit_event(
     return f"data: {chunk.model_dump_json()}\n\n"
 
 
+def _error_event(message: str, error_type: str) -> str:
+    error = {"message": message, "type": error_type, "code": error_type}
+    return f"data: {json.dumps({'error': error}, separators=(',', ':'))}\n\n"
+
+
+def _tool_output_event(chunk: dict, tool_names: dict[str, str]) -> str | None:
+    choices = chunk.get("choices") or [{}]
+    tool_calls = choices[0].get("delta", {}).get("tool_calls") or [{}]
+    tool_call_id = tool_calls[0].get("id")
+    output_content = tool_calls[0].get("output_content")
+    if not tool_call_id or not output_content:
+        return None
+    event = {
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_names.get(tool_call_id),
+        "output_content": output_content,
+        "object": "brave-chat.toolOutput",
+    }
+    return f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
+
+
+async def _run_search_calls(
+    search_calls: list,
+    mcp_executor: Any,
+    conversation_id: str,
+    model: str,
+    tool_result_messages: list,
+) -> AsyncIterator[str]:
+    tool_names = {
+        tool_call.id or f"call_{tool_call.index}": tool_call.function_name
+        for tool_call in search_calls
+    }
+    async for event, output in execute_tools_and_stream_events(
+        search_calls, mcp_executor, conversation_id, model, model
+    ):
+        if event:
+            yield event
+        if isinstance(output, dict):
+            output_event = _tool_output_event(output, tool_names)
+            if output_event:
+                yield output_event
+        elif output:
+            tool_result_messages.append(output)
+
+
 async def load_search_tools(
     model_config: ModelConfig, client_tools: list
 ) -> tuple[list[dict], Any]:
@@ -90,6 +135,8 @@ class _Round:
     accumulator: ToolCallAccumulator = field(default_factory=ToolCallAccumulator)
     tool_calls: list = field(default_factory=list)
     hidden_indexes: set[int] = field(default_factory=set)
+    visible_indexes: dict[int, int] = field(default_factory=dict)
+    hidden_finish: bool = False
     response_id: str | None = None
 
 
@@ -110,6 +157,10 @@ def _hide_search_tool_calls(chunk: Any, state: _Round, search_names: set[str]) -
             if (tool_call.index or 0) not in state.hidden_indexes
         ]
         stripped = len(visible) != len(tool_calls)
+        for tool_call in visible:
+            tool_call.index = state.visible_indexes.setdefault(
+                tool_call.index or 0, len(state.visible_indexes)
+            )
         delta.tool_calls = visible or None
     if (
         choice.finish_reason == "tool_calls"
@@ -117,12 +168,14 @@ def _hide_search_tool_calls(chunk: Any, state: _Round, search_names: set[str]) -
         and set(state.accumulator.tool_calls) <= state.hidden_indexes
     ):
         choice.finish_reason = None
+        state.hidden_finish = True
         stripped = True
     return not (
         stripped
         and not getattr(delta, "content", None)
         and not getattr(delta, "tool_calls", None)
         and not choice.finish_reason
+        and not getattr(chunk, "usage", None)
     )
 
 
@@ -217,6 +270,12 @@ async def stream_with_search(
                 for tool_call in state.tool_calls
                 if tool_call.function_name in search_names
             ]
+            if not search_calls and state.hidden_finish:
+                yield _error_event(
+                    "Search tool call arguments could not be parsed.",
+                    "invalid_tool_call",
+                )
+                break
             if not search_calls or len(search_calls) != len(state.tool_calls):
                 break
             if round_number == _MAX_TOOL_ROUNDS:
@@ -225,11 +284,10 @@ async def stream_with_search(
                 break
 
             tool_result_messages: list = []
-            async for event in run_mcp_tool_round(
+            async for event in _run_search_calls(
                 search_calls,
                 mcp_executor,
                 state.response_id or "unknown",
-                model,
                 model,
                 tool_result_messages,
             ):
@@ -244,6 +302,12 @@ async def stream_with_search(
                 tool_result_messages,
             )
             response = await next_round(messages)
+            if isinstance(response, dict):
+                yield _error_event(
+                    response.get("content") or "Search follow-up failed.",
+                    "internal_error",
+                )
+                break
             if response is None:
                 break
 

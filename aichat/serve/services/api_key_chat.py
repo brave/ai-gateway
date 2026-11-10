@@ -122,7 +122,7 @@ def _search_stream(
         followup = await backend.converse(followup_messages, stream=True, params=params)
         if isinstance(followup, dict):
             logger.warning("Search follow-up failed: %s", followup.get("content"))
-            return None
+            return followup
         round_ctx = _usage_context(request, api_key, usage_model, backend)
         return api_key_usage.settled_stream(followup, round_ctx)
 
