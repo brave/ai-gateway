@@ -23,7 +23,11 @@ from aichat.serve.services.chat_request import (
 )
 from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
 from aichat.serve.services.model_selection import select_model_for_request
-from aichat.serve.services.search_stream import load_search_tools, stream_with_search
+from aichat.serve.services.search_stream import (
+    load_search_tools,
+    relax_followup_tool_choice,
+    stream_with_search,
+)
 from aichat.serve.utils import get_real_ip
 
 logger = logging.getLogger(__name__)
@@ -114,6 +118,7 @@ def _search_stream(
 ) -> AsyncIterator[str]:
     async def next_round(followup_messages: list[dict]):
         params = _build_params(backend, chat_request, followup_messages)
+        relax_followup_tool_choice(params, chat_request.tools, search_tools)
         followup = await backend.converse(followup_messages, stream=True, params=params)
         if isinstance(followup, dict):
             logger.warning("Search follow-up failed: %s", followup.get("content"))

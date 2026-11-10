@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
 
 from aichat.protocol.open_ai_protocol import ToolCall, ToolCallFunction
 from aichat.serve.mcp_integration import initialize_mcp_for_request
@@ -29,6 +30,36 @@ OnChunk = Callable[[Any], Any | None]
 def _tool_name(tool: Any) -> str | None:
     function = tool.get("function") if isinstance(tool, dict) else None
     return function.get("name") if isinstance(function, dict) else None
+
+
+def relax_followup_tool_choice(
+    params: dict, tools: list, search_tools: list[dict]
+) -> None:
+    tool_choice = params.get("tool_choice")
+    search_names = {_tool_name(tool) for tool in search_tools} - {None}
+    if not tool_choice or not search_names:
+        return
+    forces_search = (
+        isinstance(tool_choice, dict) and _tool_name(tool_choice) in search_names
+    )
+    requires_only_search = tool_choice == "required" and all(
+        _tool_name(tool) in search_names for tool in tools
+    )
+    if forces_search or requires_only_search:
+        params["tool_choice"] = "auto"
+
+
+def _round_limit_event(
+    response_id: str | None, model: str, on_chunk: OnChunk | None
+) -> str:
+    chunk = ModelResponseStream(
+        id=response_id or "unknown",
+        model=model,
+        choices=[StreamingChoices(index=0, delta=Delta(), finish_reason="length")],
+    )
+    if on_chunk is not None:
+        chunk = on_chunk(chunk) or chunk
+    return f"data: {chunk.model_dump_json()}\n\n"
 
 
 async def load_search_tools(
@@ -190,6 +221,7 @@ async def stream_with_search(
                 break
             if round_number == _MAX_TOOL_ROUNDS:
                 logger.warning("Search tool round limit reached for %s", model)
+                yield _round_limit_event(state.response_id, model, on_chunk)
                 break
 
             tool_result_messages: list = []

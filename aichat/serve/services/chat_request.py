@@ -49,6 +49,8 @@ def parse_chat_request(body: Any) -> ChatRequest:
         raise ValueError(
             "brave_inline_search and brave_search_tools require stream to be true"
         )
+    if (inline_search or search_tools) and chat_request.get("n") not in (None, 1):
+        raise ValueError("brave_inline_search and brave_search_tools require n to be 1")
 
     extra_params = {
         key: value
