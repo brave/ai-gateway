@@ -22,6 +22,7 @@ from aichat.serve.androcles import (
     androcles_inference,
     task_type_from_androcles_probabilities,
 )
+from aichat.serve.app_segment import APP_DEFAULT
 from aichat.serve.conversation_settings import conversation_settings
 from aichat.serve.rate_limiting import check_and_increment_automatic_mode_daily_count
 from aichat.serve.services.androcles_prefetch import AndroclesPrefetch
@@ -63,8 +64,11 @@ async def select_model_for_request(
     httpx_client: httpx.AsyncClient | None = None,
     androcles_prefetch: AndroclesPrefetch | None = None,
     tools: list[Tool] | None = None,
+    app: str = APP_DEFAULT,
 ) -> str:
     if has_capability(brave_capability, Capability.content_agent):
+        if not is_premium:
+            return model_settings.content_agent_free_default_model
         model_cfg = get_model_config(model) if model in model_settings.models else None
         return (
             model
@@ -91,7 +95,7 @@ async def select_model_for_request(
     treat_as_premium = is_premium
     if not is_premium and rate_key:
         treat_as_premium = await check_and_increment_automatic_mode_daily_count(
-            rate_key, httpx_client=httpx_client
+            rate_key, httpx_client=httpx_client, app=app
         )
 
     tier = "premium" if treat_as_premium else "non-premium"

@@ -20,6 +20,7 @@ from aichat.protocol.leo_api_protocol import Capability
 from aichat.protocol.open_ai_protocol import ErrorCode, has_capability
 from aichat.protocol.open_ai_protocol import Request as OpenAIRequest
 from aichat.serve.api_version import api_version_from_path
+from aichat.serve.app_segment import app_dependency, get_app
 from aichat.serve.auth import *
 from aichat.serve.rate_limiting import *
 from aichat.serve.rate_limiting_settings import rate_limiting_settings
@@ -98,6 +99,7 @@ def require_internal_models_api_key(
 def resolve_model(
     request: OpenAIRequest,
     is_premium_host: bool = fastapi.Depends(check_premium_host),
+    app: str = fastapi.Depends(app_dependency),
 ) -> str:
     """
     Returns the model name to use for the request, downgrading premium model
@@ -119,7 +121,7 @@ def resolve_model(
             f'Premium model requested on non-premium endpoint: "{model}"  '
             "downgrading to automatic"
         )
-        PREMIUM_MODEL_DOWNGRADE_TOTAL.labels(model=model).inc()
+        PREMIUM_MODEL_DOWNGRADE_TOTAL.labels(model=model, app=app).inc()
         return "automatic"
     return model
 
@@ -265,7 +267,7 @@ async def check_requests_common(
             common.get("is_automatic_model_request")
             and _peek_under_limit(
                 await check_automatic_mode_daily_limit(
-                    real_ip, httpx_client=httpx_client
+                    real_ip, httpx_client=httpx_client, app=get_app(raw_request)
                 )
             )
         )

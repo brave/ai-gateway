@@ -128,6 +128,7 @@ async def rate_limit_check(
     force_error_rate_limit: bool,
     is_premium_request: bool = False,
     waf_signals: dict[str, str] | None = None,
+    app: str = "default",
 ) -> dict[str, Any] | None:
     return await _post(
         client,
@@ -144,6 +145,7 @@ async def rate_limit_check(
             "force_error_rate_limit": force_error_rate_limit,
             "is_premium_request": is_premium_request,
             "waf_signals": waf_signals or {},
+            "app": app,
         },
     )
 
@@ -191,6 +193,7 @@ async def rate_limit_automatic_mode_peek(
     *,
     hashed_ip_current: str,
     hashed_ip_previous: str | None,
+    app: str = "default",
 ) -> dict[str, Any] | None:
     return await _post(
         client,
@@ -198,6 +201,7 @@ async def rate_limit_automatic_mode_peek(
         {
             "hashed_ip_current": hashed_ip_current,
             "hashed_ip_previous": hashed_ip_previous,
+            "app": app,
         },
     )
 
@@ -207,6 +211,7 @@ async def rate_limit_automatic_mode_check(
     *,
     hashed_ip_current: str,
     hashed_ip_previous: str | None,
+    app: str = "default",
 ) -> dict[str, Any] | None:
     return await _post(
         client,
@@ -214,6 +219,7 @@ async def rate_limit_automatic_mode_check(
         {
             "hashed_ip_current": hashed_ip_current,
             "hashed_ip_previous": hashed_ip_previous,
+            "app": app,
         },
     )
 

@@ -12,6 +12,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_fastapi_instrumentator.metrics import Info
 
 from aichat.serve.api_version import api_version_from_path
+from aichat.serve.app_segment import get_app
 
 PDF_FILE_PART_ENCOUNTERED = Counter(
     name="pdf_file_part_encountered_total",
@@ -37,7 +38,15 @@ def metrics(logger: Logger) -> Callable[[Info], None]:
     TOTAL = Counter(
         name="api_requests_total",
         documentation="Total number of requests by method, status and handler.",
-        labelnames=("method", "code", "handler", "model", "host", "api_version"),
+        labelnames=(
+            "method",
+            "code",
+            "handler",
+            "model",
+            "host",
+            "api_version",
+            "app",
+        ),
         registry=REGISTRY,
     )
 
@@ -70,7 +79,15 @@ def metrics(logger: Logger) -> Callable[[Info], None]:
             100.0,
             INF,
         ),
-        labelnames=("method", "code", "handler", "model", "host", "api_version"),
+        labelnames=(
+            "method",
+            "code",
+            "handler",
+            "model",
+            "host",
+            "api_version",
+            "app",
+        ),
         registry=REGISTRY,
     )
 
@@ -97,7 +114,15 @@ def metrics(logger: Logger) -> Callable[[Info], None]:
             100.0,
             INF,
         ),
-        labelnames=("method", "code", "handler", "model", "host", "api_version"),
+        labelnames=(
+            "method",
+            "code",
+            "handler",
+            "model",
+            "host",
+            "api_version",
+            "app",
+        ),
         registry=REGISTRY,
     )
 
@@ -113,6 +138,7 @@ def metrics(logger: Logger) -> Callable[[Info], None]:
             api_version = api_version_from_path(info.modified_handler or "")
 
         host = info.request.headers.get("host")
+        app = get_app(info.request)
 
         try:
             messages = getattr(info.request.state, "messages", None)
@@ -141,6 +167,7 @@ def metrics(logger: Logger) -> Callable[[Info], None]:
             model,
             host,
             api_version,
+            app,
         ).inc()
         LATENCY.labels(
             info.method,
@@ -149,6 +176,7 @@ def metrics(logger: Logger) -> Callable[[Info], None]:
             model,
             host,
             api_version,
+            app,
         ).observe(info.modified_duration)
         LATENCY_WITHOUT_STREAMING.labels(
             info.method,
@@ -157,6 +185,7 @@ def metrics(logger: Logger) -> Callable[[Info], None]:
             model,
             host,
             api_version,
+            app,
         ).observe(info.modified_duration_without_streaming)
 
     return instrumentation

@@ -67,7 +67,11 @@ class TestSettleUsage:
     async def test_records_token_metrics(self, monkeypatch):
         settle = AsyncMock(return_value={})
         monkeypatch.setattr(api_key_usage.internal_client, "usage_settle", settle)
-        labels = {"model": "test-model", "token_type": "cache_read_tokens"}
+        labels = {
+            "model": "test-model",
+            "token_type": "cache_read_tokens",
+            "app": "default",
+        }
         before = REGISTRY.get_sample_value("api_key_usage_tokens_total", labels) or 0.0
         await api_key_usage.settle_usage(
             USAGE_CTX, {"prompt_tokens": 1, "cache_read_input_tokens": 7}
