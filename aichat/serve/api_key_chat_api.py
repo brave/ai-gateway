@@ -12,6 +12,7 @@ from aichat.serve.common_api import extract_bearer_token
 from aichat.serve.internal_settings import internal_settings
 from aichat.serve.server_settings import server_settings
 from aichat.serve.services.api_key_chat import (
+    deny_response,
     handle_chat_completions,
     openai_error_response,
 )
@@ -75,14 +76,6 @@ def check_api_key_host(request: Request) -> JSONResponse | None:
     return None
 
 
-_DENY_RESPONSES = {
-    "insufficient_credit": (402, "Insufficient credit.", "insufficient_credit"),
-    "limit_reached": (429, "API key limit reached.", "key_limit_reached"),
-    "unavailable": (503, "Service unavailable.", "service_unavailable"),
-    "model_not_allowed": (400, "The model does not exist.", "model_not_found"),
-}
-
-
 async def requested_model(request: Request) -> str | None:
     try:
         body = await request.json()
@@ -106,10 +99,7 @@ async def authorize_api_key(
             None,
         )
     if not verdict.get("allowed", False):
-        status, message, error_type = _DENY_RESPONSES.get(
-            verdict.get("reason"), (401, "Invalid API key.", "invalid_api_key")
-        )
-        return openai_error_response(status, message, error_type), None
+        return deny_response(verdict.get("reason")), None
     return None, verdict.get("model")
 
 
