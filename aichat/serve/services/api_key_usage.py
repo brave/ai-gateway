@@ -9,6 +9,7 @@ import httpx
 
 from aichat.llm.metrics import API_KEY_USAGE_SETTLE_TOTAL, API_KEY_USAGE_TOKENS_TOTAL
 from aichat.serve import internal_client
+from aichat.serve.app_segment import APP_DEFAULT
 from aichat.serve.services.models import ModelConfig
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class UsageContext:
     transaction_id: str
     model: str
     provider: str
+    app: str = APP_DEFAULT
 
 
 @dataclass(frozen=True)
@@ -46,7 +48,11 @@ def usage_provider(config: ModelConfig) -> str:
 
 
 def new_usage_context(
-    httpx_client: httpx.AsyncClient, api_key: str, model: str, config: ModelConfig
+    httpx_client: httpx.AsyncClient,
+    api_key: str,
+    model: str,
+    config: ModelConfig,
+    app: str = APP_DEFAULT,
 ) -> UsageContext:
     return UsageContext(
         httpx_client=httpx_client,
@@ -54,6 +60,7 @@ def new_usage_context(
         transaction_id=f"txn_{uuid.uuid4().hex}",
         model=model,
         provider=usage_provider(config),
+        app=app,
     )
 
 
@@ -101,7 +108,7 @@ async def settle_usage(ctx: UsageContext, usage: Any) -> None:
     for token_type, value in token_counts.items():
         if value:
             API_KEY_USAGE_TOKENS_TOTAL.labels(
-                model=ctx.model, token_type=token_type
+                model=ctx.model, token_type=token_type, app=ctx.app
             ).inc(value)
 
     result = await internal_client.usage_settle(

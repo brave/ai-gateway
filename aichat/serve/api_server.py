@@ -36,6 +36,7 @@ from fastapi.responses import JSONResponse
 
 from aichat.protocol.open_ai_protocol import ATTACHMENT_URL_ERROR, ErrorCode
 from aichat.serve import api_key_chat_api
+from aichat.serve.app_segment import resolve_app
 from aichat.serve.brave_search_api import router as brave_search_router
 from aichat.serve.common_api import create_error_response
 from aichat.serve.constants import PRODUCTION
@@ -184,6 +185,13 @@ async def info():
 
 @app.middleware("http")
 async def api_key_host_gate(request, call_next):
+    request.state.app = resolve_app(
+        request.headers.get("brave-product"),
+        api_key_chat_api.api_key_from_authorization(
+            request.headers.get("authorization")
+        )
+        is not None,
+    )
     error = api_key_chat_api.check_api_key_host(request)
     if error is not None:
         return error

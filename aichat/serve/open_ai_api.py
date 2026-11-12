@@ -55,6 +55,7 @@ from aichat.responses import (
     SecurityScan,
 )
 from aichat.serve.analytics import send_analytics_request
+from aichat.serve.app_segment import get_app
 from aichat.serve.backend.litellm import handle_litellm_error
 from aichat.serve.common_api import (
     check_requests_common,
@@ -199,6 +200,7 @@ async def v1_chat_completions(
             httpx_client=getattr(raw_request.state, "httpx_client", None),
             androcles_prefetch=dynamic_leo_prefetch,
             tools=request.tools,
+            app=get_app(raw_request),
         )
         common["model"] = request.model
 

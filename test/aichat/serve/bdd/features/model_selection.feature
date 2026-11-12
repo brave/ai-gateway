@@ -3,16 +3,30 @@ Feature: Model selection for chat requests
   configuration, request shape and Androcles classification. Explicit
   models pass through unless unknown or ensembles.
 
-  Scenario: Content agent capability with a supported model keeps the model
-    Given model "leo-think" with content agent support
+  Scenario: Premium content agent capability with a supported model keeps the model
+    Given a premium content agent user
+    And model "leo-think" with content agent support
     When a model is selected with content agent capability
     Then the selected model is "leo-think"
 
-  Scenario: Content agent capability without support uses the default agent model
-    Given model "basic" without content agent support
+  Scenario: Premium content agent capability without support uses the default agent model
+    Given a premium content agent user
+    And model "basic" without content agent support
     And a content agent default model "agent-model"
     When a model is selected for "automatic" with content agent capability
     Then the selected model is "agent-model"
+
+  Scenario: Free content agent capability with a supported model uses the free default model
+    Given model "leo-think" with content agent support
+    And a free content agent default model "free-agent-model"
+    When a model is selected with content agent capability
+    Then the selected model is "free-agent-model"
+
+  Scenario: Free content agent capability without support uses the free default model
+    Given model "basic" without content agent support
+    And a free content agent default model "free-agent-model"
+    When a model is selected for "automatic" with content agent capability
+    Then the selected model is "free-agent-model"
 
   Scenario: Explicit free model passes through unchanged
     Given model "leo-hw" exists
