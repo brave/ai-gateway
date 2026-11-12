@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import aclosing
@@ -19,7 +20,11 @@ from aichat.serve.services.chat_request import (
 )
 from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
 from aichat.serve.services.model_selection import select_model_for_request
-from aichat.serve.utils import calculate_message_tokens, get_real_ip
+from aichat.serve.utils import (
+    DEFAULT_TOKENIZER,
+    calculate_message_tokens,
+    get_real_ip,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +54,12 @@ def deny_response(reason: str | None) -> JSONResponse:
     return openai_error_response(status, message, error_type)
 
 
+def _tool_definition_tokens(tools: list | None) -> int:
+    if not tools:
+        return 0
+    return len(DEFAULT_TOKENIZER.encode(json.dumps(tools, default=str)))
+
+
 async def _preflight_api_key(
     request: Request,
     api_key: str,
@@ -62,7 +73,8 @@ async def _preflight_api_key(
         api_key=api_key,
         model=model,
         provider=provider,
-        estimated_input_tokens=calculate_message_tokens(messages),
+        estimated_input_tokens=calculate_message_tokens(messages)
+        + _tool_definition_tokens(params.get("tools")),
         max_output_tokens=int(
             params.get("max_completion_tokens") or params.get("max_tokens") or 0
         ),
