@@ -459,7 +459,7 @@ def headed_keys_assert(ctx, headed_keys):
 
 @when(parsers.parse('the ohttp config is verified and fetched for "{model_name}"'))
 def verify_and_fetch(ctx, model_name, monkeypatch):
-    fetch_mock = AsyncMock(return_value=ctx.get("fresh_att"))
+    fetch_mock = AsyncMock(return_value=[ctx.get("fresh_att")])
     monkeypatch.setattr(near_mod, "_fetch_attestation", fetch_mock)
     ctx["fetch_mock"] = fetch_mock
     ctx["result"] = asyncio.run(verify_and_get_ohttp_config(model_name))
