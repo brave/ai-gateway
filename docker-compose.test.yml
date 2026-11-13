@@ -13,7 +13,29 @@ services:
       - COVERAGE_FAIL_UNDER=${COVERAGE_FAIL_UNDER:-80}
       # Container filesystem is read-only; coverage data must land on tmpfs.
       - COVERAGE_FILE=/tmp/.coverage
+      # Dedicated test Valkey database for the Redis integration scenarios.
+      - REDIS_HOST=valkey
+      - REDIS_DB=15
     hostname: ai-gateway
+    networks:
+      - ai-gateway-test
+    depends_on:
+      valkey:
+        condition: service_healthy
+
+  valkey:
+    image: valkey/valkey:9.1.3
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
     networks:
       - ai-gateway-test
 
