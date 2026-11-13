@@ -44,7 +44,13 @@ def ctx(monkeypatch):
         state["settles"].append(kwargs)
         return state["settle_result"]
 
+    async def api_key_preflight(_client, **kwargs):
+        return {"allowed": True}
+
     monkeypatch.setattr(api_key_usage.internal_client, "usage_settle", usage_settle)
+    monkeypatch.setattr(
+        api_key_usage.internal_client, "api_key_preflight", api_key_preflight
+    )
     return state
 
 
