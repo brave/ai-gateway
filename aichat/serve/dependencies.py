@@ -9,7 +9,9 @@ def get_pool():
     global _pool
     if _pool is None and redis_settings.redis_host:
         _pool = aioredis.ConnectionPool(
-            host=redis_settings.redis_host, password=redis_settings.redis_password
+            host=redis_settings.redis_host,
+            password=redis_settings.redis_password,
+            db=redis_settings.redis_db,
         )
     return _pool
 

@@ -72,6 +72,18 @@ Instruct Syrupy to generate new snapshots based on new outputs
 make test-docker TEST_ARG="--snapshot-update test/aichat/conversation/prompt_test.py test/aichat/conversation/retrieve/functions_test.py"
 ```
 
+The Redis integration scenarios (connection pool, NEAR attestation cache in
+`test/aichat/serve/bdd/redis_integration_test.py`) run against the dedicated
+Valkey service from `docker-compose.test.yml` and skip when no Redis is
+reachable. They flush only the database selected via `REDIS_DB` and refuse
+db 0, so a Redis shared with development stays intact. To run them natively,
+point `REDIS_HOST` at a local instance:
+
+```sh
+docker run --rm -p 6379:6379 valkey/valkey:9.1.3
+REDIS_HOST=localhost REDIS_DB=15 poetry run pytest test/aichat/serve/bdd/redis_integration_test.py
+```
+
 </details>
 
 ## Roadmap
