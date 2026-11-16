@@ -220,7 +220,7 @@ async def test_followup_error_ends_with_an_error(monkeypatch):
 
     assert events[-1] == "data: [DONE]\n\n"
     assert _payloads(events)[-1]["error"] == {
-        "message": "Rate limited.",
+        "message": "Search follow-up failed.",
         "type": "internal_error",
         "code": "internal_error",
     }

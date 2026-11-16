@@ -32,16 +32,22 @@ class TestAuthorizeApiKey:
         )
         verify = AsyncMock()
         monkeypatch.setattr(api_key_chat_api.internal_client, "api_key_verify", verify)
-        error, model, _ = await api_key_chat_api.authorize_api_key(mock_request, "k")
+        error, model, capabilities = await api_key_chat_api.authorize_api_key(
+            mock_request, "k"
+        )
         assert error is None and model is None
+        assert capabilities == frozenset({"chat"})
         verify.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_allowed(self, mock_request, monkeypatch):
         verify = AsyncMock(return_value={"allowed": True})
         monkeypatch.setattr(api_key_chat_api.internal_client, "api_key_verify", verify)
-        error, model, _ = await api_key_chat_api.authorize_api_key(mock_request, "k")
+        error, model, capabilities = await api_key_chat_api.authorize_api_key(
+            mock_request, "k"
+        )
         assert error is None and model is None
+        assert capabilities == frozenset({"chat"})
         verify.assert_awaited_once_with(mock_request.state.httpx_client, "k", None)
 
     @pytest.mark.asyncio
@@ -52,8 +58,11 @@ class TestAuthorizeApiKey:
             "api_key_verify",
             AsyncMock(return_value=verdict),
         )
-        resp, _, _ = await api_key_chat_api.authorize_api_key(mock_request, "k")
+        resp, _, capabilities = await api_key_chat_api.authorize_api_key(
+            mock_request, "k"
+        )
         assert resp.status_code == 401
+        assert capabilities == frozenset()
 
     @pytest.mark.asyncio
     async def test_unavailable_returns_503(self, mock_request, monkeypatch):
@@ -62,8 +71,11 @@ class TestAuthorizeApiKey:
             "api_key_verify",
             AsyncMock(return_value=None),
         )
-        resp, _, _ = await api_key_chat_api.authorize_api_key(mock_request, "k")
+        resp, _, capabilities = await api_key_chat_api.authorize_api_key(
+            mock_request, "k"
+        )
         assert resp.status_code == 503
+        assert capabilities == frozenset()
 
 
 @pytest.fixture

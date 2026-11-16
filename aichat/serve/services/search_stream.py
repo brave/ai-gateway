@@ -4,8 +4,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
-from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices
+from litellm.types.utils import Delta, ModelResponseStream, StreamingChoices, Usage
 
 from aichat.protocol.open_ai_protocol import ToolCall, ToolCallFunction
 from aichat.serve.mcp_integration import initialize_mcp_for_request
@@ -21,6 +20,9 @@ from aichat.serve.tool_parser import ToolCallAccumulator, parse_streaming_tool_c
 logger = logging.getLogger(__name__)
 
 _MAX_TOOL_ROUNDS = 5
+_MAX_SEARCH_CALLS_PER_ROUND = 5
+_SEARCH_FAILED_MESSAGE = "Search follow-up failed."
+_SEARCH_UNAVAILABLE_MESSAGE = "Web search is unavailable; continuing without it."
 SEARCH_TOOL_NAMES = frozenset({"brave_web_search"})
 
 NextRound = Callable[[list[dict]], Awaitable[AsyncIterator | dict | None]]
@@ -59,6 +61,47 @@ def _round_limit_event(
     )
     if on_chunk is not None:
         chunk = on_chunk(chunk) or chunk
+    return f"data: {chunk.model_dump_json()}\n\n"
+
+
+def _search_unavailable_event() -> str:
+    event = {
+        "object": "brave-chat.searchUnavailable",
+        "message": _SEARCH_UNAVAILABLE_MESSAGE,
+    }
+    return f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
+
+
+def _usage_value(usage: Any, key: str) -> int:
+    value = usage.get(key) if isinstance(usage, dict) else getattr(usage, key, 0)
+    return int(value or 0)
+
+
+def _add_usage(total: Usage | None, usage: Any) -> Usage | None:
+    if usage is None:
+        return total
+    prompt = _usage_value(usage, "prompt_tokens")
+    completion = _usage_value(usage, "completion_tokens")
+    if total is not None:
+        prompt += total.prompt_tokens
+        completion += total.completion_tokens
+    return Usage(
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        total_tokens=prompt + completion,
+    )
+
+
+def _usage_event(
+    usage: Usage, response_id: str | None, model: str, on_chunk: OnChunk | None
+) -> str | None:
+    chunk = ModelResponseStream(
+        id=response_id or "unknown", model=model, choices=[], usage=usage
+    )
+    if on_chunk is not None:
+        chunk = on_chunk(chunk)
+        if chunk is None:
+            return None
     return f"data: {chunk.model_dump_json()}\n\n"
 
 
@@ -116,7 +159,7 @@ async def load_search_tools(
         mcp_tools, mcp_executor = await initialize_mcp_for_request(
             model_config=model_config, dynamic_leo_enabled=False
         )
-    except (httpx.HTTPError, json.JSONDecodeError, KeyError, ValueError):
+    except Exception:
         logger.exception("Failed to load search tools")
         return [], None
 
@@ -138,6 +181,7 @@ class _Round:
     visible_indexes: dict[int, int] = field(default_factory=dict)
     hidden_finish: bool = False
     response_id: str | None = None
+    usage: Any = None
 
 
 def _hide_search_tool_calls(chunk: Any, state: _Round, search_names: set[str]) -> bool:
@@ -219,6 +263,12 @@ async def _stream_round(
                 ):
                     continue
 
+            if getattr(chunk, "usage", None) is not None:
+                state.usage = chunk.usage
+                chunk.usage = None
+                if not chunk.choices:
+                    continue
+
             try:
                 if on_chunk is not None:
                     chunk = on_chunk(chunk)
@@ -257,17 +307,24 @@ async def stream_with_search(
     mcp_executor: Any,
     next_round: NextRound,
     on_chunk: OnChunk | None = None,
+    search_unavailable: bool = False,
 ) -> AsyncIterator[str]:
     search_names = {_tool_name(tool) for tool in search_tools} - {None}
     inline = InlineSearchStream() if inline_search else None
+    total_usage: Usage | None = None
+    response_id: str | None = None
     try:
         try:
+            if search_unavailable:
+                yield _search_unavailable_event()
             for round_number in range(_MAX_TOOL_ROUNDS + 1):
                 state = _Round()
                 async for event in _stream_round(
                     response, state, search_names, inline, on_chunk
                 ):
                     yield event
+                total_usage = _add_usage(total_usage, state.usage)
+                response_id = state.response_id or response_id
 
                 search_calls = [
                     tool_call
@@ -287,6 +344,7 @@ async def stream_with_search(
                     yield _round_limit_event(state.response_id, model, on_chunk)
                     break
 
+                search_calls = search_calls[:_MAX_SEARCH_CALLS_PER_ROUND]
                 tool_result_messages: list = []
                 async for event in _run_search_calls(
                     search_calls,
@@ -308,8 +366,8 @@ async def stream_with_search(
                 response = await next_round(messages)
                 if isinstance(response, dict):
                     yield _error_event(
-                        response.get("content") or "Search follow-up failed.",
-                        "internal_error",
+                        response.get("client_message") or _SEARCH_FAILED_MESSAGE,
+                        response.get("client_error_type") or "internal_error",
                     )
                     break
                 if response is None:
@@ -319,6 +377,10 @@ async def stream_with_search(
                 for event in await inline.drain_events():
                     if event:
                         yield event
+            if total_usage is not None:
+                usage_event = _usage_event(total_usage, response_id, model, on_chunk)
+                if usage_event:
+                    yield usage_event
         except Exception:
             logger.exception("Search stream failed for %s", model)
             yield _error_event("Search stream failed.", "internal_error")

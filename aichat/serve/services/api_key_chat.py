@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 class ApiKeyCapability(StrEnum):
     chat = "chat"
     web_search = "web_search"
-    deep_research = "deep_research"
 
 
 DEFAULT_API_KEY_CAPABILITIES: frozenset[str] = frozenset({ApiKeyCapability.chat})
@@ -169,15 +168,31 @@ def _search_stream(
     search_tools: list[dict],
     executor,
     include_usage: bool,
+    search_unavailable: bool = False,
 ) -> AsyncIterator[str]:
     async def next_round(followup_messages: list[dict]):
         params = _build_params(backend, chat_request, followup_messages)
         relax_followup_tool_choice(params, chat_request.tools, search_tools)
+        round_ctx = _usage_context(request, api_key, usage_model, backend)
+        if round_ctx is not None:
+            denial = await _preflight_api_key(
+                request,
+                api_key,
+                usage_model,
+                api_key_usage.usage_provider(backend.config),
+                followup_messages,
+                params,
+            )
+            if denial is not None:
+                error = json.loads(denial.body)["error"]
+                return {
+                    "client_message": error["message"],
+                    "client_error_type": error["type"],
+                }
         followup = await backend.converse(followup_messages, stream=True, params=params)
         if isinstance(followup, dict):
-            logger.warning("Search follow-up failed: %s", followup.get("content"))
+            logger.warning("Search follow-up failed with code %s", followup.get("code"))
             return followup
-        round_ctx = _usage_context(request, api_key, usage_model, backend)
         return api_key_usage.settled_stream(followup, round_ctx)
 
     return stream_with_search(
@@ -191,6 +206,7 @@ def _search_stream(
         on_chunk=partial(
             _client_chunk, model=response_model, include_usage=include_usage
         ),
+        search_unavailable=search_unavailable,
     )
 
 
@@ -295,6 +311,9 @@ async def handle_chat_completions(
                 search_tools=search_tools,
                 executor=executor,
                 include_usage=include_usage,
+                search_unavailable=chat_request.search_tools
+                and not search_tools
+                and executor is None,
             ),
             media_type="text/event-stream",
         )

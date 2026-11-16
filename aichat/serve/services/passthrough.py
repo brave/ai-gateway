@@ -49,7 +49,7 @@ def _search_stream(
         relax_followup_tool_choice(params, chat_request.tools, search_tools)
         followup = await backend.converse(followup_messages, stream=True, params=params)
         if isinstance(followup, dict):
-            logger.warning("Search follow-up failed: %s", followup.get("content"))
+            logger.warning("Search follow-up failed with code %s", followup.get("code"))
         return followup
 
     return stream_with_search(
@@ -60,6 +60,9 @@ def _search_stream(
         search_tools=search_tools,
         mcp_executor=executor,
         next_round=next_round,
+        search_unavailable=chat_request.search_tools
+        and not search_tools
+        and executor is None,
     )
 
 
