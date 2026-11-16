@@ -5,6 +5,7 @@ from aichat.protocol.open_ai_protocol import TextContentPart
 from aichat.serve.services.mcp.handlers.utils import (
     build_web_sources_content_part,
     build_web_sources_output_part,
+    safe_source_url,
 )
 from aichat.serve.services.mcp.registry import (
     AugmentedToolConfig,
@@ -63,7 +64,7 @@ class DeepResearchServerHandler(MCPServerHandler):
         if citations:
             citations_text = "\n\nSources:\n"
             for i, citation in enumerate(citations):
-                url = citation.get("url", "")
+                url = safe_source_url(citation.get("url", ""))
                 snippet = citation.get("snippet", "")
                 number = citation.get("number", i + 1)
 

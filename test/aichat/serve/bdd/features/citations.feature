@@ -15,7 +15,17 @@ Feature: Deep research citation formatting
       | numbered and linked              | 1     |
       | missing number                   | 0     |
       | missing url                      | 0     |
-      | hostnameless url falls back      | 1     |
+
+  Scenario Outline: Non-http citation urls are blanked
+    Given citations <citations>
+    When the citation map is built
+    Then the map has 1 entries
+    And the citation entry is blanked
+
+    Examples:
+      | citations         |
+      | javascript url    |
+      | schemeless url    |
 
   Scenario: Answers gain a separator and spaced citations
     Given an answer "The sky is blue[1] indeed"
