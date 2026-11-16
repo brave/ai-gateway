@@ -76,7 +76,8 @@ class GatewayAttestationCloudAPI(BaseModel):
 
 class AttestationCloudAPI(BaseModel):
     gateway_attestation: GatewayAttestationCloudAPI
-    model_attestations: list[ModelAttestation] = Field(min_length=1, max_length=1)
+    # One report per serving backend.
+    model_attestations: list[ModelAttestation] = Field(min_length=1)
     ohttp_attestation: OHTTPAttestation
 
 
@@ -366,10 +367,10 @@ def _extract_target_digests(app_compose: str | None) -> dict[str, str]:
     return digests
 
 
-async def _fetch_attestation(model_name: str) -> AttestationDetails:
+async def _fetch_attestation(model_name: str) -> list[AttestationDetails]:
     """
-    Fetch the full attestation report from the model's upstream.
-    Raises on any failure.
+    Fetch the full attestation report from the model's upstream, as one
+    AttestationDetails per serving backend. Raises on any failure.
     """
     model_config = model_settings.models[model_name]
     address = model_config["address"]
@@ -387,24 +388,31 @@ async def _fetch_attestation(model_name: str) -> AttestationDetails:
 
     if is_cloud_api:
         parsed = AttestationCloudAPI.model_validate(data)
-        model_attestation = parsed.model_attestations[0]
         gateway = parsed.gateway_attestation
-        return AttestationDetails(
-            model_name=model_attestation.model_name,
-            gateway_app_compose=gateway.info.tcb_info.app_compose,
-            compose_actions=model_attestation.compose_manager_attestation.actions,
-            signing_keys=[gateway.signing_address, model_attestation.signing_address],
-            ohttp_attestation=parsed.ohttp_attestation,
-        )
+        return [
+            AttestationDetails(
+                model_name=model_attestation.model_name,
+                gateway_app_compose=gateway.info.tcb_info.app_compose,
+                compose_actions=model_attestation.compose_manager_attestation.actions,
+                signing_keys=[
+                    gateway.signing_address,
+                    model_attestation.signing_address,
+                ],
+                ohttp_attestation=parsed.ohttp_attestation,
+            )
+            for model_attestation in parsed.model_attestations
+        ]
     else:
         parsed = ModelAttestation.model_validate(data)
-        return AttestationDetails(
-            model_name=parsed.model_name,
-            gateway_app_compose=None,
-            compose_actions=parsed.compose_manager_attestation.actions,
-            signing_keys=[parsed.signing_address],
-            ohttp_attestation=parsed.ohttp_attestation,
-        )
+        return [
+            AttestationDetails(
+                model_name=parsed.model_name,
+                gateway_app_compose=None,
+                compose_actions=parsed.compose_manager_attestation.actions,
+                signing_keys=[parsed.signing_address],
+                ohttp_attestation=parsed.ohttp_attestation,
+            )
+        ]
 
 
 async def verify_and_get_ohttp_config(model_name: str) -> OHTTPConfig | None:
@@ -419,12 +427,14 @@ async def verify_and_get_ohttp_config(model_name: str) -> OHTTPConfig | None:
     if cached is not None:
         return OHTTPConfig.model_validate_json(cached)
 
-    attestation = await _fetch_attestation(model_name)
+    attestations = await _fetch_attestation(model_name)
 
-    if not _verify_attestation(attestation, model_name):
+    # Any backend may serve the request, so every one of them must verify.
+    if not all(_verify_attestation(a, model_name) for a in attestations):
         return None
 
-    config = _build_ohttp_config(attestation.ohttp_attestation, model_name)
+    # Every entry carries the same OHTTP attestation, or is the only entry.
+    config = _build_ohttp_config(attestations[0].ohttp_attestation, model_name)
     if config is None:
         return None
 

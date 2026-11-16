@@ -251,7 +251,7 @@ async def test_fetch_attestation(
     monkeypatch.setattr(near.external_service_settings, "near_api_key", "test-key")
     monkeypatch.setattr(near.httpx, "AsyncClient", lambda: _FakeAsyncClient(report))
 
-    details = await near._fetch_attestation(model_name)
+    [details] = await near._fetch_attestation(model_name)
 
     assert (details.gateway_app_compose is not None) == has_gateway_compose
     assert details.signing_keys == expected_signing_keys
@@ -259,6 +259,69 @@ async def test_fetch_attestation(
     assert details.ohttp_attestation.signing_key == "bb"
     # The attestation endpoint is authenticated: the bearer token must be sent.
     assert _FakeAsyncClient.last_headers == {"Authorization": "Bearer test-key"}
+
+
+@pytest.mark.asyncio
+async def test_fetch_attestation_returns_every_backend(monkeypatch, reset_models):
+    reset_models["near-test"] = {
+        "address": "https://cloud-api.near.ai/v1/",
+        "upstream_model": "test-model",
+    }
+    report = _cloud_api_report(_ALL_DIGESTS)
+    second = dict(report["model_attestations"][0], signing_address="md2")
+    report["model_attestations"].append(second)
+    monkeypatch.setattr(near.httpx, "AsyncClient", lambda: _FakeAsyncClient(report))
+
+    details = await near._fetch_attestation("near-test")
+
+    assert [d.signing_keys for d in details] == [["gw", "md"], ["gw", "md2"]]
+
+
+class _FakeRedis:
+    def __init__(self):
+        self.store: dict[str, str] = {}
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def set(self, key, value, ex=None):
+        self.store[key] = value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "verdicts,served", [([True, True], True), ([True, False], False)]
+)
+async def test_ohttp_config_requires_every_backend_to_verify(
+    monkeypatch, verdicts, served
+):
+    redis = _FakeRedis()
+    monkeypatch.setattr(near, "get_pool", lambda: None)
+    monkeypatch.setattr(near.aioredis, "Redis", lambda **k: redis)
+    backends = [_details([f"key{i}"]) for i in range(len(verdicts))]
+
+    async def fetch(model_name):
+        return backends
+
+    monkeypatch.setattr(near, "_fetch_attestation", fetch)
+    monkeypatch.setattr(
+        near,
+        "_verify_attestation",
+        lambda a, m: verdicts[int(a.signing_keys[0][3:])],
+    )
+    config = near.OHTTPConfig(
+        key_config="aa",
+        signing_key="bb",
+        signature="cc",
+        endpoint_url="https://addr/v1/chat/completions",
+        upstream_model_name="up",
+    )
+    monkeypatch.setattr(near, "_build_ohttp_config", lambda o, m: config)
+
+    result = await near.verify_and_get_ohttp_config("m")
+
+    assert (result == config) is served
+    assert bool(redis.store) is served
 
 
 class _FakeS3Client:

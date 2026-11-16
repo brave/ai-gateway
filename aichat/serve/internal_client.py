@@ -79,6 +79,29 @@ async def api_key_verify(
     )
 
 
+async def api_key_preflight(
+    client: httpx.AsyncClient,
+    *,
+    api_key: str,
+    model: str,
+    provider: str,
+    estimated_input_tokens: int,
+    max_output_tokens: int,
+) -> dict[str, Any] | None:
+    return await _post(
+        client,
+        "/1/api_key/preflight",
+        {
+            "api_key": api_key,
+            "model": model,
+            "provider": provider,
+            "estimated_input_tokens": estimated_input_tokens,
+            "max_output_tokens": max_output_tokens,
+        },
+        idempotent=True,
+    )
+
+
 async def usage_settle(
     client: httpx.AsyncClient,
     *,

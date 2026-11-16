@@ -31,8 +31,14 @@ def ctx(monkeypatch):
         state["verify_calls"] += 1
         return state["verdict"]
 
+    async def api_key_preflight(_client, **kwargs):
+        return {"allowed": True}
+
     monkeypatch.setattr(
         api_key_chat_api.internal_client, "api_key_verify", api_key_verify
+    )
+    monkeypatch.setattr(
+        api_key_chat_api.internal_client, "api_key_preflight", api_key_preflight
     )
     return state
 
