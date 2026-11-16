@@ -32,3 +32,7 @@
 ## Git
 
 - Never attribute commits or PRs to Cursor or an AI tool.
+
+## Dependencies
+- Never add dependencies without a good reason.
+- Dependencies should be secure and well-maintained.
