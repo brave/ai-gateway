@@ -72,31 +72,36 @@ def _search_unavailable_event() -> str:
     return f"data: {json.dumps(event, separators=(',', ':'))}\n\n"
 
 
-def _usage_value(usage: Any, key: str) -> int:
-    value = usage.get(key) if isinstance(usage, dict) else getattr(usage, key, 0)
-    return int(value or 0)
+def _usage_dict(usage: Any) -> dict:
+    return usage if isinstance(usage, dict) else usage.model_dump()
 
 
-def _add_usage(total: Usage | None, usage: Any) -> Usage | None:
+def _sum_usage(left: dict, right: dict) -> dict:
+    merged = dict(left)
+    for key, value in right.items():
+        current = merged.get(key)
+        if isinstance(value, dict):
+            merged[key] = _sum_usage(
+                current if isinstance(current, dict) else {}, value
+            )
+        elif isinstance(value, int | float) and not isinstance(value, bool):
+            merged[key] = (current or 0) + value
+        elif current is None:
+            merged[key] = value
+    return merged
+
+
+def _add_usage(total: dict | None, usage: Any) -> dict | None:
     if usage is None:
         return total
-    prompt = _usage_value(usage, "prompt_tokens")
-    completion = _usage_value(usage, "completion_tokens")
-    if total is not None:
-        prompt += total.prompt_tokens
-        completion += total.completion_tokens
-    return Usage(
-        prompt_tokens=prompt,
-        completion_tokens=completion,
-        total_tokens=prompt + completion,
-    )
+    return _sum_usage(total or {}, _usage_dict(usage))
 
 
 def _usage_event(
-    usage: Usage, response_id: str | None, model: str, on_chunk: OnChunk | None
+    usage: dict, response_id: str | None, model: str, on_chunk: OnChunk | None
 ) -> str | None:
     chunk = ModelResponseStream(
-        id=response_id or "unknown", model=model, choices=[], usage=usage
+        id=response_id or "unknown", model=model, choices=[], usage=Usage(**usage)
     )
     if on_chunk is not None:
         chunk = on_chunk(chunk)
@@ -163,12 +168,17 @@ async def load_search_tools(
         logger.exception("Failed to load search tools")
         return [], None
 
+    catalog_search_tools = [
+        tool for tool in mcp_tools if tool.function.name in SEARCH_TOOL_NAMES
+    ]
+    if not catalog_search_tools:
+        return [], None
+
     client_tool_names = {_tool_name(tool) for tool in client_tools}
     search_tools = [
         tool.model_dump(exclude_none=True)
-        for tool in mcp_tools
-        if tool.function.name in SEARCH_TOOL_NAMES
-        and tool.function.name not in client_tool_names
+        for tool in catalog_search_tools
+        if tool.function.name not in client_tool_names
     ]
     return search_tools, mcp_executor
 
@@ -311,7 +321,7 @@ async def stream_with_search(
 ) -> AsyncIterator[str]:
     search_names = {_tool_name(tool) for tool in search_tools} - {None}
     inline = InlineSearchStream() if inline_search else None
-    total_usage: Usage | None = None
+    total_usage: dict | None = None
     response_id: str | None = None
     try:
         try:
@@ -337,7 +347,11 @@ async def stream_with_search(
                         "invalid_tool_call",
                     )
                     break
-                if not search_calls or len(search_calls) != len(state.tool_calls):
+                has_client_calls = any(
+                    tool_call.function_name not in search_names
+                    for tool_call in state.accumulator.tool_calls.values()
+                )
+                if not search_calls or has_client_calls:
                     break
                 if round_number == _MAX_TOOL_ROUNDS:
                     logger.warning("Search tool round limit reached for %s", model)
