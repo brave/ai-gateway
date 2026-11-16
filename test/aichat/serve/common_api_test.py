@@ -254,10 +254,10 @@ def test_resolve_model_downgrades_premium_model_on_non_premium_host(
     request = mock.Mock()
     request.model = "claude-3-sonnet"
 
-    result = resolve_model(request, is_premium_host=False)
+    result = resolve_model(request, is_premium_host=False, app="default")
 
     assert result == "automatic"
-    mock_metric.labels.assert_called_once_with(model="claude-3-sonnet")
+    mock_metric.labels.assert_called_once_with(model="claude-3-sonnet", app="default")
     mock_metric.labels.return_value.inc.assert_called_once()
 
 

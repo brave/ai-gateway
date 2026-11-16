@@ -14,6 +14,7 @@ class ModelSettings(BaseSettings):
     models: dict[str, Any] = json.loads(MODELS_DEFAULT)
     model_triaging: dict[str, Any] = json.loads(MODEL_TRIAGING_DEFAULT)
     content_agent_default_model: str = "claude-3-sonnet"
+    content_agent_free_default_model: str = "claude-3-haiku"
 
     def model_post_init(self, __context: Any, /) -> None:
         if self.model_triaging and "default" not in self.model_triaging:
