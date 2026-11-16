@@ -26,6 +26,7 @@ class ServerSettings(BaseSettings):
     min_output_tokens: int = 512
 
     api_key_chat_enabled: bool = True
+    api_key_default_max_tokens: int = 0
     # When a model has truncation_continuation in models.json: one follow-up LLM
     # turn if finish_reason=stop but the reply does not end like a full sentence.
     truncation_continuation_max_depth: int = 2

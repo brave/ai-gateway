@@ -10,9 +10,11 @@ from starlette.requests import Request
 from aichat.serve import internal_client
 from aichat.serve.internal_settings import internal_settings
 from aichat.serve.open_ai_api import detect_media_content, get_last_user_message_content
+from aichat.serve.server_settings import server_settings
 from aichat.serve.services import api_key_usage
 from aichat.serve.services.backend import get_backend
 from aichat.serve.services.chat_request import (
+    ChatRequest,
     build_backend_params,
     parse_chat_request,
     parse_messages,
@@ -86,6 +88,17 @@ async def _preflight_api_key(
     return None
 
 
+def _apply_default_max_tokens(params: dict, chat_request: ChatRequest) -> None:
+    default = server_settings.api_key_default_max_tokens
+    if default <= 0:
+        return
+    if "max_tokens" in chat_request.extra_params:
+        return
+    if "max_completion_tokens" in chat_request.extra_params:
+        return
+    params["max_tokens"] = default
+
+
 # Streams the completion chunks of the response to the client.
 # Usage is settled in the background after the response is delivered.
 async def _stream_completion_chunks(
@@ -134,6 +147,7 @@ async def handle_chat_completions(
 
         backend = get_backend(model)
         params = build_backend_params(backend, chat_request, messages)
+        _apply_default_max_tokens(params, chat_request)
         include_usage = bool(
             (chat_request.extra_params.get("stream_options") or {}).get("include_usage")
         )
