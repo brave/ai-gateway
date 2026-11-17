@@ -3,11 +3,13 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import aclosing
+from dataclasses import replace
 
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.requests import Request
 
 from aichat.serve import internal_client
+from aichat.serve.app_segment import get_app
 from aichat.serve.internal_settings import internal_settings
 from aichat.serve.open_ai_api import detect_media_content, get_last_user_message_content
 from aichat.serve.services import api_key_usage
@@ -116,6 +118,8 @@ async def handle_chat_completions(
         chat_request = parse_chat_request(await request.json())
     except Exception as e:
         return openai_error_response(400, str(e), "invalid_request_error")
+    if chat_request.enable_prompt_caching is None:
+        chat_request = replace(chat_request, enable_prompt_caching=True)
 
     try:
         protocol_messages = parse_messages(chat_request)
@@ -130,6 +134,7 @@ async def handle_chat_completions(
             rate_key=get_real_ip(request.headers.get("x-forwarded-for")),
             httpx_client=getattr(request.state, "httpx_client", None),
             androcles_prefetch=dynamic_leo_prefetch,
+            app=get_app(request),
         )
 
         backend = get_backend(model)
@@ -160,6 +165,7 @@ async def handle_chat_completions(
                 api_key,
                 served_model or model,
                 backend.config,
+                get_app(request),
             )
 
         converse = backend.converse(messages, stream=chat_request.stream, params=params)

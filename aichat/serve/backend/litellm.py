@@ -29,6 +29,7 @@ from aichat.serve.services.bedrock import (
     format_tools_for_bedrock,
     get_bedrock_guardrail_params,
     get_cache_control_injection_points,
+    install_guarded_text_cache_control_patch,
     map_tool_role_to_assistant,
     split_assistant_content_with_tool_calls,
 )
@@ -218,6 +219,7 @@ def get_global_router() -> Router:
 
     if _global_router is None:
         logger.info("Initializing global LiteLLM Router...")
+        install_guarded_text_cache_control_patch()
 
         model_list = []
         fallbacks_dict = {}
@@ -623,6 +625,15 @@ class LitellmBackend(Backend):
                 e, is_streaming=stream, model=self.config.model_id
             )
 
+    def uses_prompt_caching(self, enable_prompt_caching: bool | None = None) -> bool:
+        # Callers may override the model's default caching behavior in either
+        # direction, but only for models the config marks as cache-capable.
+        return bool(self.config.prompt_caching_support) and (
+            bool(self.config.prompt_caching_enabled)
+            if enable_prompt_caching is None
+            else enable_prompt_caching
+        )
+
     def build_params(
         self,
         stream: bool,
@@ -630,6 +641,7 @@ class LitellmBackend(Backend):
         messages: list[dict],
         context_window_override: int | None = None,
         enable_prompt_caching: bool | None = None,
+        client_cache_marks: bool = False,
     ) -> dict:
         """Build the parameters for the router completion call.
 
@@ -637,6 +649,9 @@ class LitellmBackend(Backend):
         model's real hardware context window instead of the business-level
         ``conversation_token_limit*`` cap when computing remaining headroom
         for ``max_tokens``.
+
+        ``client_cache_marks`` means the caller already placed ``cache_control``
+        marks, so no server-side cache checkpoints are added.
         """
         # Start with base parameters
         params = OpenAIChatParams().model_dump()
@@ -644,12 +659,8 @@ class LitellmBackend(Backend):
         if self.config.extra_body:
             merge_model_extra_body(params, self.config.extra_body)
 
-        # Callers may override the model's default caching behavior in either
-        # direction, but only for models the config marks as cache-capable.
-        should_use_prompt_caching = bool(self.config.prompt_caching_support) and (
-            bool(self.config.prompt_caching_enabled)
-            if enable_prompt_caching is None
-            else enable_prompt_caching
+        should_use_prompt_caching = (
+            self.uses_prompt_caching(enable_prompt_caching) and not client_cache_marks
         )
 
         # Add tools and tool_choice if available

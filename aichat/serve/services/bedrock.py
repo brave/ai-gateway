@@ -3,6 +3,8 @@ import logging
 import re
 from json import JSONDecodeError, loads
 
+from litellm.llms.bedrock.chat.converse_transformation import AmazonConverseConfig
+
 from aichat.protocol.open_ai_protocol import Tool
 from aichat.serve.constants import CONTENT_FILTER_MESSAGE
 from aichat.serve.services.bedrock_settings import bedrock_settings
@@ -84,6 +86,57 @@ def get_bedrock_guardrail_params(litellm_model: str) -> dict:
             }
         }
     return {}
+
+
+def _carry_cache_control_to_guarded_text(
+    original: list[dict], converted: list[dict]
+) -> None:
+    for source, target in zip(original, converted, strict=False):
+        if source is target or target.get("role") != "user":
+            continue
+        parts = target.get("content")
+        if not isinstance(parts, list) or not parts:
+            continue
+        source_parts = source.get("content")
+        if isinstance(source_parts, list):
+            for source_part, part in zip(source_parts, parts, strict=False):
+                if (
+                    isinstance(source_part, dict)
+                    and isinstance(part, dict)
+                    and source_part.get("cache_control")
+                    and not part.get("cache_control")
+                ):
+                    part["cache_control"] = source_part["cache_control"]
+        mark = target.pop("cache_control", None)
+        last = parts[-1]
+        if mark and isinstance(last, dict) and not last.get("cache_control"):
+            last["cache_control"] = mark
+
+
+def install_guarded_text_cache_control_patch() -> None:
+    """
+    Keep cache checkpoints on user messages litellm wraps as guarded content.
+
+    With a guardrail configured, litellm rewrites trailing user messages into
+    ``guarded_text`` parts and drops their ``cache_control``, so Bedrock never
+    receives that ``cachePoint``.
+    """
+    name = "_convert_consecutive_user_messages_to_guarded_text"
+    convert = getattr(AmazonConverseConfig, name, None)
+    if convert is None:
+        logger.warning("litellm has no %s; guarded cache checkpoints not kept", name)
+        return
+    if getattr(convert, "_keeps_cache_control", False):
+        return
+
+    def convert_keeping_cache_control(messages, optional_params):
+        converted = convert(messages, optional_params)
+        if converted is not messages:
+            _carry_cache_control_to_guarded_text(messages, converted)
+        return converted
+
+    convert_keeping_cache_control._keeps_cache_control = True
+    setattr(AmazonConverseConfig, name, staticmethod(convert_keeping_cache_control))
 
 
 def completion_content_for_finish_reason(

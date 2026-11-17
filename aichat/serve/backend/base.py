@@ -13,6 +13,9 @@ class Backend:
     ) -> AsyncIterator | dict:
         pass
 
+    def uses_prompt_caching(self, enable_prompt_caching: bool | None = None) -> bool:
+        return False
+
     def build_params(
         self,
         stream: bool,
@@ -20,5 +23,6 @@ class Backend:
         messages: list[dict],
         context_window_override: int | None = None,
         enable_prompt_caching: bool | None = None,
+        client_cache_marks: bool = False,
     ) -> dict:
         pass
