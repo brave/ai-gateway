@@ -245,6 +245,54 @@ class TestLitellmBackend:
             assert "api_key" not in params  # Bedrock doesn't use api_key
             mock_format.assert_called_once_with(mock_tools)
 
+    def test_build_params_bedrock_adds_server_cache_checkpoints(
+        self, mock_bedrock_model_config, mock_tools
+    ):
+        backend = LitellmBackend(mock_bedrock_model_config)
+        messages = [
+            {"role": "system", "content": "s"},
+            {"role": "user", "content": "x"},
+        ]
+        params = backend.build_params(stream=False, tools=mock_tools, messages=messages)
+        assert params["tools"][-1]["cache_control"] == {"type": "ephemeral"}
+        assert params["cache_control_injection_points"]
+
+    def test_build_params_client_cache_marks_skip_server_checkpoints(
+        self, mock_bedrock_model_config, mock_tools
+    ):
+        backend = LitellmBackend(mock_bedrock_model_config)
+        messages = [
+            {"role": "system", "content": "s"},
+            {"role": "user", "content": "x"},
+        ]
+        params = backend.build_params(
+            stream=False,
+            tools=mock_tools,
+            messages=messages,
+            client_cache_marks=True,
+        )
+        assert "cache_control" not in params["tools"][-1]
+        assert "cache_control_injection_points" not in params
+
+    @pytest.mark.parametrize(
+        "support,enabled,requested,expected",
+        [
+            (True, True, None, True),
+            (True, False, None, False),
+            (True, False, True, True),
+            (True, True, False, False),
+            (False, True, True, False),
+            (None, None, True, False),
+        ],
+    )
+    def test_uses_prompt_caching(
+        self, mock_bedrock_model_config, support, enabled, requested, expected
+    ):
+        mock_bedrock_model_config.prompt_caching_support = support
+        mock_bedrock_model_config.prompt_caching_enabled = enabled
+        backend = LitellmBackend(mock_bedrock_model_config)
+        assert backend.uses_prompt_caching(requested) is expected
+
     def test_build_params_without_tools(self, mock_model_config):
         """Test building parameters without tools"""
         backend = LitellmBackend(mock_model_config)

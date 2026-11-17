@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -6,13 +7,17 @@ from pydantic import TypeAdapter
 
 from aichat.protocol.open_ai_protocol import MessageUnion
 from aichat.serve.backend.litellm import apply_claude_upstream_sampling_params
+from aichat.serve.services.bedrock import MAX_CACHE_POINTS
 from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
 from aichat.serve.services.pdf import process_messages_for_pdf_limits
+
+logger = logging.getLogger(__name__)
 
 _request_adapter = TypeAdapter(CompletionCreateParams)
 _message_adapter = TypeAdapter(MessageUnion)
 _PASSTHROUGH_EXCLUDE = {"model", "messages", "stream"}
 _PRUNED_DEFAULT_PARAMS = ("temperature", "top_p", "stop")
+_EPHEMERAL = {"type": "ephemeral"}
 
 
 @dataclass(frozen=True)
@@ -23,6 +28,43 @@ class ChatRequest:
     tools: list
     extra_params: dict[str, Any]
     enable_prompt_caching: bool | None
+    cached_message_indices: frozenset[int] = frozenset()
+    cached_tool_indices: frozenset[int] = frozenset()
+
+    @property
+    def has_cache_marks(self) -> bool:
+        return bool(self.cached_message_indices or self.cached_tool_indices)
+
+
+def _is_cache_mark(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("type") == "ephemeral"
+
+
+def _message_has_cache_mark(message: Any) -> bool:
+    if not isinstance(message, dict):
+        return False
+    if _is_cache_mark(message.get("cache_control")):
+        return True
+    content = message.get("content")
+    return isinstance(content, list) and any(
+        isinstance(part, dict) and _is_cache_mark(part.get("cache_control"))
+        for part in content
+    )
+
+
+def _tool_has_cache_mark(tool: Any) -> bool:
+    if not isinstance(tool, dict):
+        return False
+    function = tool.get("function")
+    return _is_cache_mark(tool.get("cache_control")) or (
+        isinstance(function, dict) and _is_cache_mark(function.get("cache_control"))
+    )
+
+
+def _marked_indices(items: Any, has_mark) -> frozenset[int]:
+    if not isinstance(items, list):
+        return frozenset()
+    return frozenset(i for i, item in enumerate(items) if has_mark(item))
 
 
 def parse_chat_request(body: Any) -> ChatRequest:
@@ -47,6 +89,10 @@ def parse_chat_request(body: Any) -> ChatRequest:
         tools=tools,
         extra_params=extra_params,
         enable_prompt_caching=enable_prompt_caching,
+        cached_message_indices=_marked_indices(
+            body["messages"], _message_has_cache_mark
+        ),
+        cached_tool_indices=_marked_indices(body.get("tools"), _tool_has_cache_mark),
     )
 
 
@@ -65,14 +111,55 @@ async def prepare_messages(protocol_messages: list[MessageUnion]) -> list[dict]:
     return await process_messages_for_pdf_limits(messages, None)
 
 
+def _mark_last_part(message: dict) -> None:
+    content = message.get("content")
+    if isinstance(content, str):
+        if not content:
+            return
+        content = [{"type": "text", "text": content}]
+        message["content"] = content
+    if isinstance(content, list) and content and isinstance(content[-1], dict):
+        content[-1]["cache_control"] = dict(_EPHEMERAL)
+
+
+def _apply_client_cache_marks(
+    chat_request: ChatRequest, messages: list[dict]
+) -> tuple[list, bool]:
+    marked = False
+    tools = list(chat_request.tools)
+    tool_indices = sorted(chat_request.cached_tool_indices)[:MAX_CACHE_POINTS]
+    for index in tool_indices:
+        if index < len(tools) and isinstance(tools[index], dict):
+            tools[index] = {**tools[index], "cache_control": dict(_EPHEMERAL)}
+            marked = True
+    message_budget = MAX_CACHE_POINTS - len(tool_indices)
+    message_indices = sorted(chat_request.cached_message_indices)
+    if message_indices and message_budget > 0:
+        if len(messages) == len(chat_request.raw_messages):
+            for index in message_indices[-message_budget:]:
+                _mark_last_part(messages[index])
+            marked = True
+        else:
+            logger.warning("Message count changed; client cache_control ignored")
+    return tools, marked
+
+
 def build_backend_params(
     backend, chat_request: ChatRequest, messages: list[dict]
 ) -> dict[str, Any]:
+    tools = chat_request.tools
+    cache_kwargs = {}
+    if chat_request.has_cache_marks and backend.uses_prompt_caching(
+        chat_request.enable_prompt_caching
+    ):
+        tools, marked = _apply_client_cache_marks(chat_request, messages)
+        cache_kwargs["client_cache_marks"] = marked
     params = backend.build_params(
         stream=chat_request.stream,
-        tools=chat_request.tools,
+        tools=tools,
         messages=messages,
         enable_prompt_caching=chat_request.enable_prompt_caching,
+        **cache_kwargs,
     )
     for key in _PRUNED_DEFAULT_PARAMS:
         if key not in chat_request.extra_params:
