@@ -121,6 +121,37 @@ class TestHandleChatCompletions:
         assert resp.body is not None
         mock_get_backend.assert_called_once_with("test-model")
 
+    @pytest.mark.parametrize(
+        "body_flag,expected", [({}, True), ({"prompt_caching": False}, False)]
+    )
+    @pytest.mark.asyncio
+    async def test_prompt_caching_defaults_on(self, mock_request, body_flag, expected):
+        mock_request.json.return_value = {
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            **body_flag,
+        }
+        mock_response = MagicMock()
+        mock_response.model_dump.return_value = {"id": "x"}
+        with (
+            patch(
+                "aichat.serve.services.api_key_chat.run_dynamic_leo",
+                new_callable=AsyncMock,
+            ),
+            _passthrough_model_selection(),
+            patch("aichat.serve.services.api_key_chat.get_backend") as mock_get_backend,
+            patch(
+                "aichat.serve.services.chat_request.apply_claude_upstream_sampling_params"
+            ),
+        ):
+            backend = mock_get_backend.return_value
+            backend.config.upstream_model = "claude"
+            backend.build_params.return_value = {}
+            backend.converse = AsyncMock(return_value=mock_response)
+            await api_key_chat_api.handle_chat_completions(mock_request)
+        kwargs = backend.build_params.call_args.kwargs
+        assert kwargs["enable_prompt_caching"] is expected
+
     @pytest.mark.asyncio
     async def test_backend_error_returns_500(self, mock_request):
         mock_request.json.return_value = {

@@ -14,4 +14,6 @@ Guardrails are optional. Create an Amazon Bedrock guardrail with the policies yo
 
 The guardrail is applied per model deployment, so non-Bedrock models and fallbacks are unaffected. Models using the Converse API (`bedrock/`) receive it through litellm's `guardrailConfig`. `BEDROCK_GUARDRAIL_STREAM_MODE` (`sync` or `async`, default `sync`) sets the streaming mode. `bedrock_mantle` models are not covered: the `bedrock-mantle` endpoint does not support guardrails.
 
+litellm sends the trailing user messages as guarded content. The gateway keeps their prompt caching checkpoints, so caching works the same with or without a guardrail.
+
 Use a numbered version, not `DRAFT`. The guardrail must be in the same region as the Bedrock calls, and the caller needs `bedrock:ApplyGuardrail` on the guardrail (and on its guardrail profile if cross-region inference is enabled).
