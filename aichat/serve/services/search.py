@@ -66,10 +66,10 @@ async def _do_inline_search(httpx_client, query: str, type: str):
     # Raise an exception if we didn't get a success status code.
     if response.status_code != 200:
         logger.warning(
-            f"Failed to fetch inline search results for query '{query}': {response.status_code} {response.text}"
+            f"Failed to fetch inline search results for query: {response.status_code} {response.text}"
         )
         raise RuntimeError(
-            f"Failed to fetch inline search results for query '{query}': {response.status_code} {response.text}"
+            f"Failed to fetch inline search results for query: {response.status_code} {response.text}"
         )
 
     data = response.json()
