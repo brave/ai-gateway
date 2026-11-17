@@ -9,6 +9,7 @@ import httpx
 from fastapi import HTTPException, Request
 
 from aichat.serve import internal_client
+from aichat.serve.app_segment import APP_DEFAULT, get_app
 from aichat.serve.internal_settings import internal_settings
 from aichat.serve.rate_limiting_settings import rate_limiting_settings
 from aichat.serve.services.model_settings import model_settings
@@ -139,6 +140,7 @@ async def check_rate_limit(
         force_error_rate_limit=False,
         is_premium_request=is_premium_request,
         waf_signals=extract_waf_signals(raw_request.headers),
+        app=get_app(raw_request),
     )
     if response is None:
         logger.error(
@@ -182,6 +184,7 @@ async def check_content_agent_rate_limits(
 async def check_automatic_mode_daily_limit(
     rate_key: str,
     httpx_client: httpx.AsyncClient | None = None,
+    app: str = APP_DEFAULT,
 ) -> dict[str, int | bool]:
     if not rate_limiting_settings.rate_limiting_enabled:
         return {"count": 0, "exceeded": False, "limit": 0}
@@ -203,6 +206,7 @@ async def check_automatic_mode_daily_limit(
         httpx_client,
         hashed_ip_current=hashed_current,
         hashed_ip_previous=hashed_previous,
+        app=app,
     )
     if verdict is None:
         logger.error(
@@ -220,6 +224,7 @@ async def check_automatic_mode_daily_limit(
 async def check_and_increment_automatic_mode_daily_count(
     rate_key: str,
     httpx_client: httpx.AsyncClient | None = None,
+    app: str = APP_DEFAULT,
 ) -> bool:
     if not rate_limiting_settings.rate_limiting_enabled:
         return True
@@ -239,6 +244,7 @@ async def check_and_increment_automatic_mode_daily_count(
         httpx_client,
         hashed_ip_current=hashed_current,
         hashed_ip_previous=hashed_previous,
+        app=app,
     )
     if verdict is None:
         logger.error(

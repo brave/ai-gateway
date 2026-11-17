@@ -42,7 +42,7 @@ COMPACTION_ENDING_TOKEN_COUNT = Histogram(
 PREMIUM_MODEL_DOWNGRADE_TOTAL = Counter(
     name="premium_model_downgrade_total",
     documentation="Total number of requests downgraded from a premium model to automatic on the non-premium endpoint",
-    labelnames=("model",),
+    labelnames=("model", "app"),
     registry=REGISTRY,
 )
 
@@ -212,7 +212,7 @@ API_KEY_USAGE_SETTLE_TOTAL = Counter(
 
 API_KEY_USAGE_TOKENS_TOTAL = Counter(
     name="api_key_usage_tokens_total",
-    documentation="Tokens reported for API-key chat completions, by model and token type",
-    labelnames=("model", "token_type"),
+    documentation="Tokens reported for API-key chat completions, by model, token type and app",
+    labelnames=("model", "token_type", "app"),
     registry=REGISTRY,
 )

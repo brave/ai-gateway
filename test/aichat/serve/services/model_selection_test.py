@@ -40,6 +40,7 @@ class TestSelectModelForRequest:
         """Mock app settings"""
         settings = MagicMock()
         settings.content_agent_default_model = "content-agent-model"
+        settings.content_agent_free_default_model = "content-agent-free-model"
         settings.model_triaging = {
             "default": {"premium": "premium-model", "non-premium": "free-model"},
             "vision": {"premium": "vision-premium", "non-premium": "vision-free"},
@@ -74,6 +75,33 @@ class TestSelectModelForRequest:
                 is_premium=True,
             )
             assert result == "content-agent-model"
+
+    @pytest.mark.asyncio
+    async def test_content_agent_capability_non_premium_uses_free_default(
+        self, mock_messages, mock_model_settings
+    ):
+        """Test that non-premium content_agent requests are forced to the free default"""
+        mock_cfg = MagicMock()
+        mock_cfg.content_agent_support = True
+        mock_model_settings.models = {"supported-model": {}}
+
+        with (
+            patch(
+                "aichat.serve.services.model_selection.model_settings",
+                mock_model_settings,
+            ),
+            patch(
+                "aichat.serve.services.model_selection.get_model_config",
+                return_value=mock_cfg,
+            ),
+        ):
+            result = await select_model_for_request(
+                model="supported-model",
+                messages=mock_messages,
+                brave_capability=Capability.content_agent,
+                is_premium=False,
+            )
+            assert result == "content-agent-free-model"
 
     @pytest.mark.asyncio
     async def test_content_agent_capability_supported_model_passes_through(

@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.requests import Request
 
 from aichat.serve import internal_client
+from aichat.serve.app_segment import get_app
 from aichat.serve.internal_settings import internal_settings
 from aichat.serve.open_ai_api import detect_media_content, get_last_user_message_content
 from aichat.serve.services import api_key_usage
@@ -149,7 +150,7 @@ def _usage_context(
     if api_key is None or not internal_settings.internal_api_enabled:
         return None
     return api_key_usage.new_usage_context(
-        request.state.httpx_client, api_key, model, backend.config
+        request.state.httpx_client, api_key, model, backend.config, get_app(request)
     )
 
 
@@ -245,6 +246,7 @@ async def handle_chat_completions(
             rate_key=get_real_ip(request.headers.get("x-forwarded-for")),
             httpx_client=getattr(request.state, "httpx_client", None),
             androcles_prefetch=dynamic_leo_prefetch,
+            app=get_app(request),
         )
 
         backend = get_backend(model)

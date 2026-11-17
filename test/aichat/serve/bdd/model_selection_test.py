@@ -69,6 +69,17 @@ def given_agent_default(default_model, monkeypatch, ctx):
     _install_settings(monkeypatch, ctx)
 
 
+@given(parsers.parse('a free content agent default model "{default_model}"'))
+def given_free_agent_default(default_model, monkeypatch, ctx):
+    ctx["content_agent_free_default_model"] = default_model
+    _install_settings(monkeypatch, ctx)
+
+
+@given("a premium content agent user")
+def given_premium_content_agent_user(ctx):
+    ctx["is_premium"] = True
+
+
 @given(parsers.parse('model "{model_id}" exists'))
 def given_model_exists(model_id, monkeypatch, ctx):
     ctx.setdefault("models", {})[model_id] = {"type": "llm", "capabilities": []}
@@ -173,6 +184,9 @@ def _install_settings(monkeypatch, ctx):
     mock.model_triaging = ctx.get("triaging", {})
     mock.content_agent_default_model = ctx.get(
         "content_agent_default_model", "agent-model"
+    )
+    mock.content_agent_free_default_model = ctx.get(
+        "content_agent_free_default_model", "free-agent-model"
     )
     monkeypatch.setattr(model_selection, "model_settings", mock)
     from aichat.serve.services import models as services_models
@@ -296,6 +310,7 @@ def when_select_content_agent(ctx):
             model=ctx["model_id"],
             messages=[],
             brave_capability=[Capability.content_agent],
+            is_premium=ctx.get("is_premium", False),
         )
     )
 
@@ -304,7 +319,10 @@ def when_select_content_agent(ctx):
 def when_select_auto_content_agent(model, ctx):
     ctx["selected"] = asyncio.run(
         model_selection.select_model_for_request(
-            model=model, messages=[], brave_capability=[Capability.content_agent]
+            model=model,
+            messages=[],
+            brave_capability=[Capability.content_agent],
+            is_premium=ctx.get("is_premium", False),
         )
     )
 
