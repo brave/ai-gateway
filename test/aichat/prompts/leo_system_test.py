@@ -9,6 +9,7 @@ from aichat.prompts.leo_system import (
     CONTENT_AGENT_SCOPE,
     DEEP_RESEARCH_DIRECTIVE,
     DISABLE_MATH_ML,
+    ENABLE_MATH_ML,
     QWEN_SEARCH_DIRECTIVE,
     WORKSPACES_DIRECTIVE,
     _format_date_multi_city,
@@ -213,12 +214,12 @@ def test_leo_system_without_math_ml_capability_includes_directive():
     assert "{{disable_math_ml}}" not in content
 
 
-def test_leo_system_with_math_ml_capability_omits_directive():
+def test_leo_system_with_math_ml_capability_enables_mathml():
     messages = []
     expected_messages = [
         {
             "role": "system",
-            "content": _expected_content(TEST_DATETIME, disable_math_ml=""),
+            "content": _expected_content(TEST_DATETIME, disable_math_ml=ENABLE_MATH_ML),
         },
     ]
     actual_messages = leo_system.augment(
@@ -227,17 +228,18 @@ def test_leo_system_with_math_ml_capability_omits_directive():
         brave_capability=Capability.math_ml,
     )
     assert actual_messages == expected_messages
-    assert "MathML" not in actual_messages[0]["content"]
+    assert DISABLE_MATH_ML not in actual_messages[0]["content"]
 
 
-def test_leo_system_math_ml_capability_in_list_omits_directive():
+def test_leo_system_math_ml_capability_in_list_enables_mathml():
     messages = []
     actual_messages = leo_system.augment(
         messages,
         now=TEST_DATETIME,
         brave_capability=[Capability.chat, Capability.math_ml],
     )
-    assert "MathML" not in actual_messages[0]["content"]
+    assert ENABLE_MATH_ML in actual_messages[0]["content"]
+    assert DISABLE_MATH_ML not in actual_messages[0]["content"]
 
 
 def test_leo_system_other_capability_still_includes_directive():
