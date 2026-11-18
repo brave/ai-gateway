@@ -159,7 +159,7 @@ async def augment_continuation_messages(
             new_messages,
             model_config=model_config,
             tools=client_tools,
-            brave_capability=request.brave_capability,
+            brave_capability=getattr(request, "brave_capability", None),
         )
     return simplify_messages_for_llm(new_messages)
 
