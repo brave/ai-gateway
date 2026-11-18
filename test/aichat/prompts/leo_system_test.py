@@ -308,6 +308,15 @@ def test_leo_system_workspaces_capability_includes_directive():
     assert WORKSPACES_DIRECTIVE.strip() in actual_messages[0]["content"]
 
 
+def test_leo_system_workspaces_directive_documents_inline_flag():
+    actual_messages = leo_system.augment(
+        [],
+        now=TEST_DATETIME,
+        brave_capability=Capability.workspaces,
+    )
+    assert "::workspace[path/to/file]{inline}" in actual_messages[0]["content"]
+
+
 def test_leo_system_without_workspaces_omits_directive():
     messages = []
     actual_messages = leo_system.augment(messages, now=TEST_DATETIME)
