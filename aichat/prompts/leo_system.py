@@ -21,6 +21,10 @@ DISABLE_MATH_ML = """- **Math**: Do not emit MathML (`<math>`, `<mrow>`, etc.) i
 
 """
 
+ENABLE_MATH_ML = """- **Math**: This chat renders MathML inline. When the user asks for an equation, formula, or to render math, output raw `<math xmlns="http://www.w3.org/1998/Math/MathML">...</math>` directly in the reply, not inside a code fence, so it displays rendered. Use a code fence only when the user asks for the MathML source or code. Never say you cannot render math or MathML here.
+
+"""
+
 QWEN_SEARCH_DIRECTIVE = """
 **Qwen:** Apply the search rules above strictly—run a search tool before the final answer whenever they apply; do not answer time-sensitive facts from memory alone.
 """
@@ -191,7 +195,7 @@ class LeoSystem(Prompt):
             # capability; everyone else gets the plain text math directive.
             brave_capability = cast(CapabilityOptions, kwargs.get("brave_capability"))
             if has_capability(brave_capability, Capability.math_ml):
-                disable_math_ml = ""
+                disable_math_ml = ENABLE_MATH_ML
             else:
                 disable_math_ml = DISABLE_MATH_ML
 

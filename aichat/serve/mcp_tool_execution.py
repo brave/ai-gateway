@@ -758,6 +758,7 @@ async def handle_streaming_tool_calls(
                     model_config=model_config,
                     lang_code=request.selected_language,
                     tools=original_client_tools,
+                    brave_capability=request.brave_capability,
                 )
 
         params = backend.build_params(

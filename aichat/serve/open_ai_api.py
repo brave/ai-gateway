@@ -1098,6 +1098,7 @@ async def process_streaming_response(
                                 new_messages,
                                 model_config=model_config,
                                 tools=original_client_tools,
+                                brave_capability=request.brave_capability,
                             )
 
                     params = backend.build_params(
