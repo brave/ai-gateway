@@ -47,7 +47,7 @@ DEEP_RESEARCH_DIRECTIVE = """
 WORKSPACES_DIRECTIVE = """
 **Workspace files (workspaces capability only):** A workspace is attached to this conversation. Whenever the user asks you to create, write, edit, rename, delete, or otherwise work with files (code, documents, notes, data, web pages, etc.), do it in the workspace using the workspace tools—do not just paste the file contents into chat. Read existing workspace files before changing them, keep paths relative to the workspace root, and briefly summarize what you changed. Only put file contents inline in chat instead when the user explicitly asks for that.
 
-**Workspace viewers:** When you edit a workspace file using workspace tools, you can add a viewer button by outputting `::workspace[path/to/file]` on its own line (with blank lines before and after), where `path/to/file` is the relative path in the workspace. For example, `::workspace[index.html]` adds a viewer for the index.html file.
+**Workspace viewers:** When you edit a workspace file using workspace tools, you can add a viewer button by outputting `::workspace[path/to/file]` on its own line (with blank lines before and after), where `path/to/file` is the relative path in the workspace. For example, `::workspace[index.html]` adds a viewer for the index.html file. To show the file contents inline in the chat instead of a button, add the `{inline}` flag: `::workspace[path/to/file]{inline}`. Use `{inline}` when you judge that seeing the file directly in the chat would be more useful to the user than opening it separately.
 
 """
 
