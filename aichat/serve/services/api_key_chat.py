@@ -222,6 +222,8 @@ async def handle_chat_completions(
         chat_request = parse_chat_request(await request.json())
     except Exception as e:
         return openai_error_response(400, str(e), "invalid_request_error")
+    if chat_request.enable_prompt_caching is None:
+        chat_request = replace(chat_request, enable_prompt_caching=True)
 
     if (
         chat_request.search_enabled

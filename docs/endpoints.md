@@ -68,6 +68,17 @@ Set `API_KEY_HOST` to route by host instead of by header. When it matches the `H
 
 When `API_KEY_HOST` is unset, routing falls back to the key prefix check above.
 
+### Prompt caching
+
+On this path, prompt caching is on by default for models that support it, and the gateway places the cache checkpoints. Set `"prompt_caching": false` to turn it off for a request.
+
+Clients can place their own checkpoints with `"cache_control": {"type": "ephemeral"}` on a message, a content part, or a tool. When a request carries any `cache_control`, the gateway adds no checkpoints of its own. Other notes:
+
+- A mark on a message or any of its parts caches through the end of that message.
+- At most four checkpoints are used. Tool marks come first, then the latest message marks.
+- `ttl` is ignored.
+- Marks are dropped for models without prompt caching and for requests with `"prompt_caching": false`.
+
 (Still in development, disabled in production)
 
 ```sh

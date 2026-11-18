@@ -1,4 +1,5 @@
 import pytest
+from litellm.llms.bedrock.chat.converse_transformation import AmazonConverseConfig
 
 from aichat.protocol.open_ai_protocol import Tool, ToolFunction
 from aichat.serve.constants import CONTENT_FILTER_MESSAGE
@@ -13,6 +14,7 @@ from aichat.serve.services.bedrock import (
     get_bedrock_guardrail_params,
     get_cache_control_injection_points,
     get_prefix_cache_indices,
+    install_guarded_text_cache_control_patch,
     map_tool_role_to_assistant,
     sanitize_tool_call_id_for_bedrock,
     sanitize_tool_name_for_bedrock,
@@ -1286,3 +1288,62 @@ class TestGetBedrockGuardrailParams:
     def test_requires_id_and_version(self, configured, monkeypatch, missing):
         monkeypatch.setattr(bedrock_settings, missing, None)
         assert get_bedrock_guardrail_params("bedrock/converse/profile") == {}
+
+
+class TestGuardedTextCacheControlPatch:
+    GUARDRAIL = {
+        "guardrailConfig": {"guardrailIdentifier": "gr123", "guardrailVersion": "1"}
+    }
+    EPHEMERAL = {"type": "ephemeral"}
+
+    @pytest.fixture(autouse=True)
+    def patched(self):
+        install_guarded_text_cache_control_patch()
+
+    def _transform(self, messages, optional_params):
+        request = AmazonConverseConfig()._transform_request(
+            model="us.anthropic.claude-sonnet-4-5-v1:0",
+            messages=messages,
+            optional_params={"max_tokens": 8, **optional_params},
+            litellm_params={},
+            headers={},
+        )
+        return [
+            [next(iter(block)) for block in message["content"]]
+            for message in request["messages"]
+        ]
+
+    def test_message_level_mark_survives_guarded_content(self):
+        messages = [{"role": "user", "content": "hi", "cache_control": self.EPHEMERAL}]
+        assert self._transform(messages, self.GUARDRAIL) == [
+            ["guardContent", "cachePoint"]
+        ]
+
+    def test_part_level_mark_survives_guarded_content(self):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "a", "cache_control": self.EPHEMERAL},
+                    {"type": "text", "text": "b"},
+                ],
+            }
+        ]
+        assert self._transform(messages, self.GUARDRAIL) == [
+            ["guardContent", "cachePoint", "guardContent"]
+        ]
+
+    def test_without_guardrail_marks_are_unchanged(self):
+        messages = [{"role": "user", "content": "hi", "cache_control": self.EPHEMERAL}]
+        assert self._transform(messages, {}) == [["text", "cachePoint"]]
+
+    def test_unmarked_guarded_content_gets_no_cache_point(self):
+        messages = [{"role": "user", "content": "hi"}]
+        assert self._transform(messages, self.GUARDRAIL) == [["guardContent"]]
+
+    def test_install_is_idempotent(self):
+        name = "_convert_consecutive_user_messages_to_guarded_text"
+        install_guarded_text_cache_control_patch()
+        first = getattr(AmazonConverseConfig, name)
+        install_guarded_text_cache_control_patch()
+        assert getattr(AmazonConverseConfig, name) is first
