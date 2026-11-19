@@ -50,7 +50,7 @@ PREMIUM_MODEL_DOWNGRADE_TOTAL = Counter(
 AUTH_REQUESTS_BY_KEY = Counter(
     name="auth_requests_by_key_total",
     documentation="Total number of requests by service key ID (SKv2), model, and premium status",
-    labelnames=("key_id", "model", "is_premium", "api_version"),
+    labelnames=("key_id", "model", "is_premium", "api_version", "app"),
     registry=REGISTRY,
 )
 

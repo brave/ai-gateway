@@ -20,7 +20,7 @@ from aichat.protocol.leo_api_protocol import Capability
 from aichat.protocol.open_ai_protocol import ErrorCode, has_capability
 from aichat.protocol.open_ai_protocol import Request as OpenAIRequest
 from aichat.serve.api_version import api_version_from_path
-from aichat.serve.app_segment import app_dependency, get_app
+from aichat.serve.app_segment import APP_DEFAULT, app_dependency
 from aichat.serve.auth import *
 from aichat.serve.rate_limiting import *
 from aichat.serve.rate_limiting_settings import rate_limiting_settings
@@ -136,6 +136,7 @@ async def create_base_common_params(
     x_amzn_waf_incorrect_header_order: str | None = fastapi.Header(None),
     is_valid_brave_services_key=fastapi.Depends(check_x_brave_key),
     is_valid_brave_services_key_v2=fastapi.Depends(check_brave_services_key_v2),
+    app: str = fastapi.Depends(app_dependency),
 ) -> dict:
 
     api_version = api_version_from_path(raw_request.url.path)
@@ -151,6 +152,7 @@ async def create_base_common_params(
         "is_valid_brave_services_key": is_valid_brave_services_key,
         "is_valid_brave_services_key_v2": is_valid_brave_services_key_v2,
         "api_version": api_version,
+        "app": app,
     }
 
 
@@ -267,7 +269,9 @@ async def check_requests_common(
             common.get("is_automatic_model_request")
             and _peek_under_limit(
                 await check_automatic_mode_daily_limit(
-                    real_ip, httpx_client=httpx_client, app=get_app(raw_request)
+                    real_ip,
+                    httpx_client=httpx_client,
+                    app=common.get("app", APP_DEFAULT),
                 )
             )
         )
@@ -295,4 +299,5 @@ async def check_requests_common(
         model=model,
         is_premium=common["is_premium_host"] and common["has_valid_premium_credential"],
         api_version=common.get("api_version", "unknown"),
+        app=common.get("app", APP_DEFAULT),
     ).inc()

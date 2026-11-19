@@ -173,6 +173,14 @@ def given_premium_no_sku(ctx):
     }
 
 
+@given(parsers.parse('the request app is "{app}"'))
+def given_request_app(app, ctx, monkeypatch):
+    counter = MagicMock()
+    monkeypatch.setattr(common_api, "AUTH_REQUESTS_BY_KEY", counter)
+    ctx["counter"] = counter
+    ctx["app"] = app
+
+
 @given("rate limiting is enabled and the verdict denies the request")
 def given_rate_denied(monkeypatch):
     monkeypatch.setattr(rate_limiting_settings, "rate_limiting_enabled", True)
@@ -253,6 +261,8 @@ def when_common_checks(model, ctx):
         "api_version": 2,
     }
     common["model"] = model
+    if "app" in ctx:
+        common["app"] = ctx["app"]
     if state == "invalid_services_key":
         common["is_valid_brave_services_key_v2"] = False
     elif state == "unknown_model":
@@ -281,6 +291,12 @@ def then_common_error(status, ctx):
 @then("the common request checks pass")
 def then_checks_pass(ctx):
     assert ctx["common_result"] is None
+
+
+@then(parsers.parse('the key request counter is incremented for app "{app}"'))
+def then_counter_app(app, ctx):
+    assert ctx["counter"].labels.call_args.kwargs["app"] == app
+    ctx["counter"].labels.return_value.inc.assert_called_once()
 
 
 @then(parsers.parse('the common model becomes "{model}"'))

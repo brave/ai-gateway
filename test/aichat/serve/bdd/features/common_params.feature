@@ -64,6 +64,13 @@ Feature: Common completion parameters and request checks
     When the common request checks run for model "mixtral"
     Then the common model becomes "fallback-m"
 
+  Scenario: Authenticated requests are counted under the request app
+    Given a model catalog with free "mixtral" and premium "premium-x"
+    And the request app is "bravebot"
+    When the common request checks run for model "mixtral"
+    Then the common request checks pass
+    And the key request counter is incremented for app "bravebot"
+
   Scenario: Content agent support unlocks premium models for free users
     Given a model catalog with free "mixtral" and premium "premium-x"
     And premium-x supports the content agent
