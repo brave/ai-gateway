@@ -41,8 +41,10 @@ from aichat.serve.services.deployment_pools import (
     POOL_LONG,
     POOL_SHORT,
     classify_deployment_pool,
+    estimate_input_tokens_for_window,
     get_deployment_pools_config,
     long_pool_max_input_tokens,
+    model_hard_context_window,
     pool_router_tag,
     record_deployment_pool_route,
     record_short_pool_failover,
@@ -704,12 +706,25 @@ class LitellmBackend(Backend):
         )
         params["max_tokens"] = configured_max
 
-        context_window = context_window_override or (
-            self.config.conversation_token_limit_premium
-            or self.config.conversation_token_limit
+        hard_window = (
+            None
+            if context_window_override
+            else model_hard_context_window(self.config.model_id)
+        )
+        context_window = (
+            context_window_override
+            or hard_window
+            or (
+                self.config.conversation_token_limit_premium
+                or self.config.conversation_token_limit
+            )
         )
         if context_window and params.get("max_tokens"):
-            input_tokens = count_tokens(messages)
+            input_tokens = (
+                estimate_input_tokens_for_window(messages)
+                if hard_window
+                else count_tokens(messages)
+            )
             available = context_window - input_tokens
             if available < params["max_tokens"]:
                 capped = max(available, server_settings.min_output_tokens)
