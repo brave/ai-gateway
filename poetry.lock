@@ -3003,18 +3003,18 @@ crypto = ["cryptography (>=3.4.0)"]
 
 [[package]]
 name = "pylint"
-version = "4.1.2"
+version = "4.1.4"
 description = "python code static checker"
 optional = false
 python-versions = ">=3.10.0"
 groups = ["dev"]
 files = [
-    {file = "pylint-4.1.2-py3-none-any.whl", hash = "sha256:e34c8636edc7d60a2eaadca4ad6c18a49e202361987a26e81b2a17fa92be28e1"},
-    {file = "pylint-4.1.2.tar.gz", hash = "sha256:235f13dc418c0041c649b42a5c35c99f2ffc6ca8b6a7574958eac5335906a68a"},
+    {file = "pylint-4.1.4-py3-none-any.whl", hash = "sha256:b39fcc762ec4a7fe385d01b8e170fd996847297cdc0e3850bdda1435c74cfd95"},
+    {file = "pylint-4.1.4.tar.gz", hash = "sha256:4c9176dc6c9f1b98b742195f01899b290369d5a27b4b41d1014c17f2f96b26f1"},
 ]
 
 [package.dependencies]
-astroid = ">=4.3.3,<=4.4"
+astroid = ">=4.3.4,<=4.4"
 colorama = {version = ">=0.4.5", markers = "sys_platform == \"win32\""}
 dill = {version = ">=0.3.7", markers = "python_version >= \"3.12\""}
 isort = ">=5,<5.13 || >5.13,<10"
@@ -4439,4 +4439,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.15"
-content-hash = "20159d6f1d7e0bac89eb90cf61b8b99bc0ad7430bf17089adb63b70ee318ac00"
+content-hash = "70ace5a82ecb393998c08c7f13031ee49248bf621cc7cafa99ec02ae36fbde09"
