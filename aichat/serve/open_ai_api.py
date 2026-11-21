@@ -106,6 +106,7 @@ from aichat.serve.services.conversation_title import (
     last_message_includes_conversation_title,
 )
 from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
+from aichat.serve.services.deployment_pools import exceeds_model_context_window
 from aichat.serve.services.dynamic_leo.settings import dynamic_leo_settings
 from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
 from aichat.serve.services.dynamic_leo.tool_filter import (
@@ -353,6 +354,12 @@ async def v1_chat_completions(
     )
 
     messages = simplify_messages_for_llm(messages)
+
+    if exceeds_model_context_window(request.model, messages):
+        return create_error_response(
+            ErrorCode.EXCEEDED_CONTEXT_LENGTH,
+            "Conversation length exceeded. Please shorten your request or start a new conversation.",
+        )
 
     params = backend.build_params(request.stream, tools, messages)
 

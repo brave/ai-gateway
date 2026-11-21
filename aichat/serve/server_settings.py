@@ -24,6 +24,7 @@ class ServerSettings(BaseSettings):
     # floor, the model will reject with a context-window error (surfaced as a clean
     # user-facing message) rather than silently truncating output.
     min_output_tokens: int = 512
+    input_token_estimate_safety_factor: float = 1.1
 
     api_key_chat_enabled: bool = True
     # When a model has truncation_continuation in models.json: one follow-up LLM
