@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
 from aichat.llm.metrics import DEPLOYMENT_POOL_ROUTE_TOTAL
+from aichat.serve.server_settings import server_settings
 from aichat.serve.services.deployment_pool_settings import deployment_pool_settings
 from aichat.serve.services.model_settings import model_settings
 from aichat.serve.utils import calculate_message_tokens
@@ -64,6 +66,30 @@ def long_pool_max_input_tokens(pools: dict[str, Any]) -> int:
     if long_cfg.get("max_model_tokens") is not None:
         return int(long_cfg["max_model_tokens"])
     return settings.deployment_pool_long_max_input_tokens
+
+
+def model_hard_context_window(model_id: str) -> int | None:
+    pools = get_deployment_pools_config(model_id)
+    if not pools:
+        return None
+    return long_pool_max_input_tokens(pools)
+
+
+def estimate_input_tokens_for_window(messages: list[dict]) -> int:
+    return math.ceil(
+        calculate_message_tokens(messages)
+        * server_settings.input_token_estimate_safety_factor
+    )
+
+
+def exceeds_model_context_window(model_id: str, messages: list[dict]) -> bool:
+    window = model_hard_context_window(model_id)
+    if not window:
+        return False
+    return (
+        estimate_input_tokens_for_window(messages) + server_settings.min_output_tokens
+        > window
+    )
 
 
 def classify_deployment_pool(

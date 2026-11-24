@@ -160,14 +160,22 @@ def _trim_text_parts(
         if excess_tokens <= 0:
             break
         content = message.get("content")
-        if not isinstance(content, list):
+        if isinstance(content, str):
+            if message.get("role") == "system":
+                continue
+            targets = [(message, "content")]
+        elif isinstance(content, list):
+            targets = [
+                (part, "text")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            ]
+        else:
             continue
-        for part in content:
+        for part, key in targets:
             if excess_tokens <= 0:
                 break
-            if not isinstance(part, dict) or part.get("type") != "text":
-                continue
-            text = part.get("text", "")
+            text = part.get(key, "")
             if not text:
                 continue
             part_tokens = len(DEFAULT_TOKENIZER.encode(text))
@@ -177,7 +185,7 @@ def _trim_text_parts(
             try:
                 truncated, tokens_removed = truncate_text(text, tokens_to_remove)
                 if tokens_removed > 0:
-                    part["text"] = (
+                    part[key] = (
                         truncated
                         + "\n[... content truncated to fit conversation limit]"
                     )
@@ -213,17 +221,7 @@ def _log_trim_insufficient(
     per_role: dict[str, int] = {}
     for message in messages:
         role = message.get("role", "unknown")
-        content = message.get("content")
-        msg_tokens = 4
-        if isinstance(content, str):
-            msg_tokens += len(DEFAULT_TOKENIZER.encode(content))
-        elif isinstance(content, list):
-            for part in content:
-                if isinstance(part, dict):
-                    text = part.get("text") or part.get("content")
-                    if text:
-                        msg_tokens += len(DEFAULT_TOKENIZER.encode(text))
-        per_role[role] = per_role.get(role, 0) + msg_tokens
+        per_role[role] = per_role.get(role, 0) + calculate_message_tokens([message])
     logger.warning(
         f"Token trimming insufficient: {remaining_total} tokens remain "
         f"({excess_tokens} over budget). Per-role breakdown: {per_role}"
