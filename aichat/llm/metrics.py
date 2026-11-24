@@ -42,7 +42,7 @@ COMPACTION_ENDING_TOKEN_COUNT = Histogram(
 PREMIUM_MODEL_DOWNGRADE_TOTAL = Counter(
     name="premium_model_downgrade_total",
     documentation="Total number of requests downgraded from a premium model to automatic on the non-premium endpoint",
-    labelnames=("model", "app"),
+    labelnames=("model",),
     registry=REGISTRY,
 )
 
