@@ -55,7 +55,6 @@ from aichat.responses import (
     SecurityScan,
 )
 from aichat.serve.analytics import send_analytics_request
-from aichat.serve.app_segment import get_app
 from aichat.serve.backend.litellm import handle_litellm_error
 from aichat.serve.common_api import (
     check_requests_common,
@@ -106,6 +105,7 @@ from aichat.serve.services.conversation_title import (
     last_message_includes_conversation_title,
 )
 from aichat.serve.services.data_url_gate import remove_unprocessed_data_url_parts
+from aichat.serve.services.deployment_pools import exceeds_model_context_window
 from aichat.serve.services.dynamic_leo.settings import dynamic_leo_settings
 from aichat.serve.services.dynamic_leo.signals import run_dynamic_leo
 from aichat.serve.services.dynamic_leo.tool_filter import (
@@ -200,7 +200,6 @@ async def v1_chat_completions(
             httpx_client=getattr(raw_request.state, "httpx_client", None),
             androcles_prefetch=dynamic_leo_prefetch,
             tools=request.tools,
-            app=get_app(raw_request),
         )
         common["model"] = request.model
 
@@ -353,6 +352,12 @@ async def v1_chat_completions(
     )
 
     messages = simplify_messages_for_llm(messages)
+
+    if exceeds_model_context_window(request.model, messages):
+        return create_error_response(
+            ErrorCode.EXCEEDED_CONTEXT_LENGTH,
+            "Conversation length exceeded. Please shorten your request or start a new conversation.",
+        )
 
     params = backend.build_params(request.stream, tools, messages)
 
@@ -1098,6 +1103,7 @@ async def process_streaming_response(
                                 new_messages,
                                 model_config=model_config,
                                 tools=original_client_tools,
+                                brave_capability=request.brave_capability,
                             )
 
                     params = backend.build_params(
