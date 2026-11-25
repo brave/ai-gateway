@@ -74,6 +74,8 @@ async def _analyze_pdf(pdf_bytes: bytes, max_extraction_tokens: int) -> dict:
                 "max_allowed_pages": MAX_ALLOWED_PAGES,
             }
         )
+    except SandboxOpError:
+        raise
     except SandboxWorkerError as e:
         logger.error("Media sandbox worker failed hard: %s", e)
         raise
@@ -174,7 +176,7 @@ async def process_pdf_text_content_parts(
 
         except SandboxOpError:
             # Fail-closed: malformed input must not reach the provider raw.
-            logger.exception(
+            logger.warning(
                 "Sandboxed PDF parsing failed (malformed input?), removing PDF part"
             )
             DATA_URL_PART_REMOVED.inc()
